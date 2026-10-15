@@ -1,0 +1,69 @@
+# Full stack:            docker compose up --build        -> http://localhost:8080
+# With a fake camera:    docker compose --profile camera-sim up --build
+#   then add a camera in the UI with IP "mediamtx", port "8554" (any username/password).
+#   Put a video at docker/videos/sample.mp4 to stream it; otherwise a test pattern is used.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ./EmployeeMonitoringBE
+    env_file:
+      # JWT_SECRET, SECRET_KEY, SENDER_EMAIL, SENDER_PASSWORD (see EmployeeMonitoringBE/.env.example)
+      - path: ./EmployeeMonitoringBE/flaskr/.env
+        required: false
+    environment:
+      USERS_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/emonitoring_users
+      GENERAL_DATABASE_URL: postgresql://postgres:postgres@postgres:5432
+      CORS_ORIGINS: http://localhost:8080
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please-32b}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin12345}
+      SEED_ORGANIZATION: ${SEED_ORGANIZATION:-Demo}
+    volumes:
+      - storage:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build: ./EmployeeMonitoringFE
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+  # --- camera simulator (optional) ---
+  mediamtx:
+    image: bluenviron/mediamtx:1
+    profiles: ["camera-sim"]
+    ports:
+      - "8554:8554"   # RTSP
+
+  camera-sim:
+    image: linuxserver/ffmpeg:latest
+    profiles: ["camera-sim"]
+    depends_on:
+      - mediamtx
+    volumes:
+      - ./docker/videos:/videos:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        if [ -f /videos/sample.mp4 ]; then SRC="-re -stream_loop -1 -i /videos/sample.mp4";
+        else SRC="-re -f lavfi -i testsrc2=size=1280x720:rate=15"; fi;
+        exec ffmpeg $$SRC -an -c:v libx264 -preset veryfast -tune zerolatency -g 30
+        -f rtsp rtsp://mediamtx:8554/stream2
+
+volumes:
+  pgdata:
+  storage:

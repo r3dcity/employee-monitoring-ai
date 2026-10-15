@@ -3,3 +3,6 @@
 opencv-python-headless>=4.9,<5
 face_recognition==1.3.0
 ultralytics>=8.2,<9
+# Production web server: Flask app factory, threaded so long-lived MJPEG streams
+# do not block other requests. Camera workers keep state in-process: run ONE process.
+gunicorn>=22,<24

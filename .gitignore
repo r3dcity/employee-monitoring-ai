@@ -25,3 +25,4 @@ EmployeeMonitoringBE/flaskr/static/profile_pictures/*/
 EmployeeMonitoringBE/flaskr/static/mask_zones/*/
 EmployeeMonitoringBE/.ruff_cache/
 EmployeeMonitoringFE/dist/
+docker/videos/*.mp4

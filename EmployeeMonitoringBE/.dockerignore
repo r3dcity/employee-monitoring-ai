@@ -1,0 +1,11 @@
+.venv
+venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+tests
+train
+flaskr/.env
+flaskr/static/alert_screenshots
+flaskr/static/profile_pictures
+flaskr/static/mask_zones

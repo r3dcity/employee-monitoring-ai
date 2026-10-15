@@ -1,203 +1,125 @@
-# Employee monitoring system using Artificial Intelligence
+# Employee monitoring with AI
 
-# Bachelor thesis
+Bachelor thesis project: a multi-tenant web app that watches IP cameras (RTSP), recognizes
+employees by face, detects personal protective equipment (PPE) with a custom YOLO model and raises
+alerts from user-defined rules.
 
-### Steps:
+The version presented at the thesis defense is tagged `thesis-v1`. The original notes and to-do list are in
+[docs/thesis-notes.md](docs/thesis-notes.md).
 
-1. [X] Prepare both projects dependencies and folder structure (FE, BE)
-2. [X] Create the database structure ( PostgreSQL )
-3. [X] Create the models
-3.1 [X] basic CRUD for them
-3.2 [X] I also created vertical scaling through multi tenant app ( each tenant has its own database )
-3.3 [X] I implemented roles and permissions and middlewares for them 
-4. [X] Read RTSP stream
-5. [X] Deliver RTSP stream to FE
-5.1 [ ] Read about JWT and how to handle the token with COOKIES!!!
-4. [ ] Create a login/register page simple for the begging
-5. [ ] Prepare a few video files, people in an office and a construction site
-6. [ ] JWT Auth like the teacher did at Web Tech ( you can copy that part )
-7. [ ] Create a side-bar that can exapand or contract, the sidebar must contain the following buttons: ( asemanator cu HARP) - Emplyoees - Live cameras - Statistics - Settings - Logout
-8. [ ] The employees page should contain - a table of employees that can be sorted based on name or other data - a button on which you register a new employee - CRUD operations - Each employee has an image of their face ( mugshot ) -> can be seen on the right or when hovering the image becomes bigger
-9. [ ] On the Live feeds page you can see: - find how to set up cameras connection ( if you re not able to you can just use standard videos) - a grid box of live cameras ( idea maybe you can organize the cameras and make one bigger one smaller etc) - after clicking on one you can see it bigger and it will have 3 buttons - Here for the begging you can have a dropdown that let's you select what feature to apply to that camera
-       ( 1. detect faces 2. detect PPE (includes faces aswell ) 3. Monitor people )
-10. [ ] When clicking on the Monitor people feature - a button for setting the zone definition tool wil appear - clicking on it will take a screenshot of the live feed and ... ( see zone definition tool ) - it will be kept in the database that for that particular livestream you want to use the monitor people feature
-11. [ ] When clicking on detect faces - it will start detecting faces - the unauthorized personel list button will appear - There you can select which people are allowed to be there or not, not mandatory - Every decision is saved in db
-12. [ ] When clicking on detect PPE - it will start using the model that detects only PPE and the face - if any person is not having the whole equipment a db insertion is made togheter with an alert
-13. [ ] For the settings page - the administrator can configure system settings such as: - Adding or removing users - Setting up alerts preferences - change password
-14. [ ] Statistics
-        - Histogram of each employee and the number of times it didn't wear the ppe
-        - Total number of alerts / histogram based on level
-        - Alerts per VideoCamera
-        - Average time spent by employees in monitored zones
-        - Number of unauthorized access attempts per day/week/month
-        - PPE compliance rate over time
-        - Number of alerts resolved vs unresolved
-        - Employee attendance based on face recognition
-        - Most frequently visited zones
-        - Average response time to alerts
-15. [X] Extra: create 2 separate type of accounts to leverage permissions -> one is administrator full access -> other is security personell -> cannot modifiy settings
+## Features
 
+- **Organizations (multi-tenant)**: each organization gets its own PostgreSQL database; users,
+  roles and permissions live in a shared database. Admins invite security guards by link.
+- **Live cameras**: RTSP cameras are read with OpenCV and streamed to the browser.
+- **Face recognition**: employees are registered with a photo; faces in the stream are matched
+  with `face_recognition` (dlib).
+- **PPE detection**: YOLOv8 model trained on a construction-site dataset (hard hats, vests, masks,
+  vehicles, ...), tracked with ByteTrack.
+- **Zones**: polygons drawn on top of a camera.
+- **Alert rules**: conditions such as "object detected", "PPE missing", "unauthorized person" or
+  "face recognized", combined with AND/OR, with priority and cooldown. Alerts are stored with
+  a screenshot.
+- **Dashboard**: alert statistics and an optional LLM summary of alerts (local Ollama).
 
-### Database structure
+## Architecture
 
-Entity User 
-  - username
-  - password
-  - email
-  - phoneNumber
+```
+ Browser (React + Vite + Tailwind)
+    │  REST + MJPEG (/api/...)
+    ▼
+ nginx ──► Flask API (gunicorn) ──► PostgreSQL
+                │                     ├─ emonitoring_users   (users, tenants, roles)
+                │                     └─ <tenant uuid> ...    (one DB per organization)
+                ▼
+     camera worker threads: OpenCV ► face_recognition / YOLO ► rule engine ► alerts
+                ▲
+          RTSP cameras
+```
 
-Entity Employee
-  - firstName
-  - lastName
-  - phoneNumber
-  - role
-  - gender
-  - profilePicture
-  - encodedFace
-  - department
-Entity VideoCamera
-  - id
-  - ip
-  - port
-  - username
-  - password
-  - name
-  - location
-  - status  // active/inactive/error/offline
+| Folder | Content |
+|---|---|
+| `EmployeeMonitoringBE/flaskr` | Flask app: `routes/` (HTTP API), `entities/` (SQLAlchemy models), `services/` (auth, rules, alerts, storage), `migrations/` (Alembic), `ML/` (YOLO weights, face encoding) |
+| `EmployeeMonitoringBE/tests` | pytest suite (SQLite, ML libraries stubbed) |
+| `EmployeeMonitoringBE/train` | YOLO training results (metrics and plots) |
+| `EmployeeMonitoringFE/src` | React app: `pages/`, `components/`, `services/MainService.jsx` (API client) |
 
-Entity PersonDetected
-  - Employee foreign key
-  - detected_at
-  - VideoCamera foreign key
+## Running with Docker (recommended)
 
-Entity Zone
-  - VideoCamera foreign key
-  - name
-  - mask - bclr path to image
+```bash
+docker compose up --build
+# open http://localhost:8080 and log in as admin@example.com / admin12345
+```
 
-Entity Authorization
- - status - enum - allowed/notallowed -  1/0
- - Employee Foreign key
- - Zone Foreign key
- - createdAt
- - updatedAt
+The first build compiles dlib, so it takes several minutes. Configuration:
 
-Entity Alert
- - timestamp
- - type
- - level - high/medium/low
- - Employee Fk
- - Zone Fk
- - screenshot
- - resolved - true/false - > can be set by administrator
- - timestampResolvedTrue
- - explanation
+- Secrets: `EmployeeMonitoringBE/flaskr/.env` is loaded if it exists (see
+  `EmployeeMonitoringBE/.env.example`). Set at least `JWT_SECRET`, plus `SENDER_EMAIL` and
+  `SENDER_PASSWORD` (a Gmail app password) so self-registration can send verification codes.
+- The first admin comes from `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` and `SEED_ORGANIZATION`.
 
- Entity PPERecognitionItems
-  - video_camera fk
-  - ppe_id fk
-  - is_present
+**No camera at hand?** Start a simulated one:
 
-Entity PPE
- - id
- - name
+```bash
+docker compose --profile camera-sim up --build
+```
 
-### Main Features:
+Then add a camera in the UI with IP `mediamtx`, port `8554` and any username/password. To stream
+your own footage, put it at `docker/videos/sample.mp4`; otherwise a test pattern is used.
 
-- Video recording feature
- 1. If an alert happens at least a screenshot is taken
- 2. preferably a video that can be replayed
+## Running locally (development)
 
-- Face recognition feature
+Backend (Python 3.11+, PostgreSQL running locally):
 
-  1. Create an UI that let's you upload an image or take a picture with your webcam, with info about the person ( eg. name, phone number )
-  2. The picture is sent to the BE and encoded using face_recognition libary
-  3. The encoded part is saved into the database
-  4. Now the face can be detected in the video stream, retrieve the encoding part of the faces known and asses using the following methods if the face is in the frame:
-  5. G:\Facultate\objectdetection101\objectdetectionenv\facerecognition\main.py
+```bash
+cd EmployeeMonitoringBE
+python -m venv .venv && .venv/Scripts/activate     # Windows; use .venv/bin/activate on Linux/macOS
+pip install -r requirements.txt                     # needs CMake + a C++ compiler for dlib
+cp .env.example flaskr/.env                         # then edit it
+flask --app flaskr seed --admin-email you@example.com --admin-password "a-good-password"
+flask --app flaskr run --debug
+```
 
-- Unauthorized list of personel
+Frontend:
 
-  1. Create an UI that lets the administrator select what persons are allowed to be seen on a particular video stream
-  2. Send the data to BE
-  3. For every person that is recognized in that video stream check if the person is allowed or not
-  4. if not raise an alert
+```bash
+cd EmployeeMonitoringFE
+npm ci
+npm run dev            # http://localhost:5173, API at VITE_API_URL (default http://127.0.0.1:5000)
+```
 
-- Zone definition tool
+## Database migrations
 
-  1. In react, the user must be able to create poylgons forms using react-konva
-  2. The image is sent to the backend togheter with the coordinates of the points: everything inside the polygon remains the same, everything outside is drawn as black
-  3. The image is then used as a mask against the video stream using an AND operator ( in RGB ) then applying the object detection model
-  4. The coordinates are saved such that when delivered to FE the polygon is shown.
-  5. To check if a person enters that zone you check after each iteration if the person detected falls inside the polygon coordinates
+Schema changes are Alembic migrations, in two trees: `migrations/users` (central DB) and
+`migrations/tenant` (applied to every organization's DB).
 
-- Personal Protective equipment feature (PPE)
-  1. Use the following dataset to train YOLO model: https://www.kaggle.com/datasets/snehilsanyal/construction-site-safety-image-dataset-roboflow?resource=download
-  2. To train the yolo model use the following tutorial: https://www.youtube.com/watch?v=r0RspiLG260&list=WL&index=1
-  3. Now you can use the model to find a diverse range of PPE
-  4. If a person is detected and it does not have the complete list of PPE
-  5. Insert a record in the database and raise an alert
+```bash
+flask --app flaskr make-migration tenant -m "add something"   # then edit the generated file
+flask --app flaskr migrate                                     # upgrade every tenant database
+```
 
-## Arhitecture
+The users DB is upgraded on startup, and a tenant DB is upgraded the first time it is used.
+Databases created before migrations existed (`thesis-v1`) are detected and upgraded automatically.
 
-1. Backend
-   - Python
-   - Flask
-   - YOLO/OpenCV/face_recognition/Ultralytics
-   - Postgres
-        - TODO: Each entity is belongs to a group of users.
-          For each group of users create a new database file
-          Create a FK from all entities to the group
-          Let the users from that group see only the data that it belongs to
-        connection pooling/separate databases for each group
+## Tests and linting
 
-2. Frontend
-   - React
-   - Tailwind
+```bash
+cd EmployeeMonitoringBE && pip install -r requirements-dev.txt && python -m pytest && ruff check flaskr tests
+cd EmployeeMonitoringFE && npm run lint && npm run build
+```
 
-## Facts
+GitHub Actions runs both on every push and pull request.
 
-The videostream is processed only when clients ( from frontend ) are connected to the stream
-Normally, the stream should be processed at all time
-If you go to a video camera then you move around screens the stream is processed continously
+## Main API endpoints
 
-fact2
-rtsp urls are different for different cameras
-so the actual /stream2 after url works only for tapo
+| Area | Endpoints |
+|---|---|
+| Auth | `POST /users/login`, `POST /users/register`, `POST /users/verify-email`, `POST /users/refresh` |
+| Guards | `GET/DELETE /users/security[/<id>]`, `POST /users/security/invitation`, `POST /users/security/register` |
+| Cameras | `GET/POST /video-cameras/`, `GET/DELETE /video-cameras/<id>`, `GET /video-cameras/<name>/stream?token=...` |
+| Employees | `GET/POST /employees/`, `GET/PUT/DELETE /employees/<id>`, `GET /employees/<id>/profile-picture` |
+| Zones | `GET /zone/?camera_id=`, `POST /zone/`, `DELETE /zone/` |
+| Rules | `GET/POST /alert-rules/`, `PUT/DELETE /alert-rules/<id>`, `GET /alert-rules/camera/<id>` |
+| Alerts | `GET /alerts/?status=&level=&limit=&offset=`, `GET/PUT /alerts/<id>`, `GET /alerts/screenshot/<id>` |
 
-
-
-## Questions
-
-1. What is the best way to raise alerts in real time towards the FE (subscriber pattern)
-2. How to differentiate between video streams? Each one should have an unique id
-3. How to get the stream of the TAPO camera into the web browser? done
-https://www.tp-link.com/us/support/faq/2680/
-4. How do i stream to frontend? -> use WebRTC/aiortc
-
-## Fun facts
-1051 lines of code as of today 5/3/2025
-at commit id: c0da60490a58ea256c3e6dabde9541d608faab65
-
-1420 lines - 11/3/2025
-
-
-2132.py 3864.jsx lines of code 24/04/2025
-total = 5996
-
-
-Sfaturi design:
-- pastreaza consistenta intre butoane, tabele etc.
-- la tabel in loc de 2 butoane sub actions pune doar unul cu meniu
-- centreaza header ul cu logoul
-- la login nu e marimea corecta la div
-- camera video cu un mic div rotunjit sub camera cu text in div nu peste camera
-
-
-comisie:
-Vlad Diaconita
-Andra Belciu
-Bogdan Iancu
-Toma Andrei secretar
-
-23-27 iunie se incarca
+Every endpoint except login/registration needs `Authorization: Bearer <token>`.
