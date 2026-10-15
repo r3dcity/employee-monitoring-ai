@@ -223,3 +223,10 @@ def test_alert_summary_sends_only_statistics_to_the_llm(app, client, make_user, 
 
     monkeypatch.setattr(alert_summary, "llm_summary", lambda *a: (_ for _ in ()).throw(OSError("down")))
     assert client.post("/alerts/summary", headers=headers, json={}).get_json()["source"] == "stats"
+
+
+def test_routes_do_not_redirect_on_missing_trailing_slash(app, client, make_user):
+    """A redirect would point outside the /api prefix behind nginx and break the browser."""
+    _, tenant_id, headers = make_user("admin@example.com")
+    for url in ("/video-cameras", "/alerts", "/employees", "/alert-rules", "/zone"):
+        assert client.get(url, headers=headers).status_code == 200, url

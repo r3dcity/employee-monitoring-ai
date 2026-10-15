@@ -12,6 +12,9 @@ def env_flag(name, default):
 def create_app(test_config=None):
     # static_folder=None: uploads (faces, screenshots) are only served through authenticated routes
     app = Flask(__name__, instance_relative_config=True, static_folder=None)
+    # "/alerts" and "/alerts/" are the same route. Otherwise Flask answers with a redirect, which
+    # behind the /api reverse proxy points outside /api (and the browser blocks it as cross-origin).
+    app.url_map.strict_slashes = False
 
     load_dotenv()
 
