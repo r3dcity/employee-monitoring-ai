@@ -8,11 +8,14 @@ def create_app(test_config=None):
     # static_folder=None: uploads (faces, screenshots) are only served through authenticated routes
     app = Flask(__name__, instance_relative_config=True, static_folder=None)
 
-    # Specify the frontend origin explicitly and allow credentials
+    load_dotenv()
+
+    # Frontend origins allowed to call the API (comma separated)
+    cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
     CORS(
         app,
         resources={r"/*": {
-            "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+            "origins": [origin.strip() for origin in cors_origins if origin.strip()],
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
@@ -20,8 +23,8 @@ def create_app(test_config=None):
         expose_headers=["Content-Type", "Authorization"]
     )
 
-    load_dotenv()
-    static_dir = os.path.join(app.root_path, "static")
+    # Uploaded/generated files (faces, alert screenshots, zone masks)
+    static_dir = os.getenv("STORAGE_PATH") or os.path.join(app.root_path, "static")
     app.config.from_mapping(
         SECRET_KEY=os.getenv("SECRET_KEY"),
         JWT_SECRET=os.getenv("JWT_SECRET"),
@@ -31,7 +34,8 @@ def create_app(test_config=None):
         ALERTS_SCREENSHOTS_PATH=os.path.join(static_dir, "alert_screenshots"),
         PROFILE_PICTURES_PATH=os.path.join(static_dir, "profile_pictures"),
         MASK_ZONES_PATH=os.path.join(static_dir, "mask_zones"),
-        PPE_PICTURES_PATH=os.path.join(static_dir, "ppe_pictures"),
+        # Bundled with the code, not user data
+        PPE_PICTURES_PATH=os.path.join(app.root_path, "static", "ppe_pictures"),
         PPE_MODEL_PATH=os.path.join(app.root_path, "ML", "PPE_model", "my_model.pt"),
         ALLOWED_EXTENSIONS=["png", "jpg", "jpeg"],
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,

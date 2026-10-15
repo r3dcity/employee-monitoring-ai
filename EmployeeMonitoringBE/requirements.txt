@@ -1,0 +1,5 @@
+# Full backend: API + video processing / ML
+-r requirements-api.txt
+opencv-python-headless>=4.9,<5
+face_recognition==1.3.0
+ultralytics>=8.2,<9

@@ -1,6 +1,6 @@
 import uuid
 from typing import List
-from sqlalchemy import String, Boolean, ForeignKey
+from sqlalchemy import ForeignKey
 from sqlalchemy import Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
@@ -8,7 +8,6 @@ from flaskr.entities.auth_db.Tenant import Tenant
 from flaskr.entities.auth_db.EmailCodes import EmailCodes
 from flaskr.entities.auth_db.InvitationCodes import InvitationCodes
 from flaskr.entities.auth_db.Role import Role
-from flaskr.entities.auth_db.RoleUser import RoleUser
 from sqlalchemy import LargeBinary
 
 class User(AuthBaseEntity):

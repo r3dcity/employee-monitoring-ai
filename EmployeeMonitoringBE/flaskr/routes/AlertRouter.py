@@ -1,5 +1,5 @@
-from flask import Blueprint, request, jsonify, current_app as app, send_file, abort
-from flaskr.entities.Alert import Alert, AlertType, AlertLevel, AlertStatus
+from flask import Blueprint, request, jsonify, current_app as app, send_file
+from flaskr.entities.Alert import Alert, AlertLevel, AlertStatus
 from flaskr.entities.VideoCamera import VideoCamera
 from flaskr.entities.Zone import Zone
 from flaskr.db import get_tenant_db
@@ -7,7 +7,6 @@ from flaskr.middlewares.PermissionMiddleware import permission_required
 from flaskr.services.storage import resolve_stored_path
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
-import os
 
 bp = Blueprint("alerts", __name__, url_prefix="/alerts")
 

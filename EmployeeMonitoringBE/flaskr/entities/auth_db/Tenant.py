@@ -1,9 +1,7 @@
-from sqlalchemy import  String
 from sqlalchemy.orm import  Mapped, mapped_column, relationship
 from sqlalchemy import Uuid
 import uuid
 from typing import List
-from flaskr.entities.BaseEntity import mapped_column, Mapped
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
 
 class Tenant(AuthBaseEntity):

@@ -4,7 +4,7 @@ from flaskr.middlewares.AuthMiddleware import authenticate
 from flaskr.middlewares.PermissionMiddleware import permission_required, has_permission
 from flaskr.entities.VideoCamera import VideoCamera
 from flaskr.entities.Employee import Employee
-from flaskr.entities.Alert import Alert, AlertType, AlertLevel, AlertStatus
+from flaskr.entities.Alert import Alert
 from flaskr.entities.alert_system.AlertRule import AlertRule
 import cv2 as cv
 import numpy as np
@@ -17,11 +17,9 @@ from flaskr.services.rule_system.RuleInference import RuleInference
 from flaskr.services.alert_manager.AlertManager import AlertManager
 from flaskr.entities.Zone import Zone
 from sqlalchemy.orm import joinedload
-import os
 from collections import defaultdict
 from flaskr.entities.alert_system.RuleCameraLink import RuleCameraLink
 from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
-from datetime import datetime
 
 bp = Blueprint("video-cameras", __name__, url_prefix="/video-cameras")
 

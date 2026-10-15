@@ -3,7 +3,6 @@ import uuid
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy import DateTime, ForeignKey
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
-from sqlalchemy import String
 
 class EmailCodes(AuthBaseEntity):
     __tablename__ = "email_codes"

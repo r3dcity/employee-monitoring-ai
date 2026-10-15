@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from flaskr.entities.Alert import Alert, AlertType, AlertLevel, AlertStatus
 
 class RuleInference:
@@ -304,8 +304,6 @@ class RuleInference:
         # Prioritize more specific conditions.
         has_ppe_missing = any(c.get("type") == "ppe_missing" for c in conditions)
         has_unauthorized = any(c.get("type") == "unauthorized_person" for c in conditions)
-        has_zone_entry = any(c.get("type") == "zone_entry" for c in conditions)
-        has_dwell_time = any(c.get("type") == "dwell_time" for c in conditions)
         has_object_count = any(c.get("type") == "object_count" for c in conditions)
 
         if has_ppe_missing:

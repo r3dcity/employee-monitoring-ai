@@ -1,12 +1,10 @@
 import uuid
 from typing import List
-from sqlalchemy import String
 from sqlalchemy import Uuid
 from sqlalchemy.orm import relationship
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
 from flaskr.entities.BaseEntity import  mapped_column, Mapped
 from flaskr.entities.auth_db.Permission import Permission
-from flaskr.entities.auth_db.RolePermission import RolePermission
 
 class Role(AuthBaseEntity):
     __tablename__ = "roles"

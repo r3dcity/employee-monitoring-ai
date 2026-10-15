@@ -1,0 +1,12 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+# pyflakes + syntax/import errors
+select = ["E4", "E9", "F"]
+
+[lint.per-file-ignores]
+# Mapped["Other"] forward references are resolved by SQLAlchemy at runtime
+"flaskr/entities/**" = ["F821"]
+# Package __init__ files import models so they are registered on the metadata
+"**/__init__.py" = ["F401"]

@@ -3,7 +3,7 @@ import os
 import cv2 as cv
 from collections import defaultdict
 from datetime import datetime, timezone
-from flask import g, current_app
+from flask import g
 from flaskr.db import get_tenant_db
 from flaskr.services.storage import tenant_dir, relative_to_base
 from flaskr.entities.Alert import Alert, AlertStatus # Assuming AlertStatus is in Alert.py
@@ -54,9 +54,6 @@ class AlertManager:
             g.tenant_id = self.tenant_id # Set tenant context for this operation
             db = get_tenant_db()
             
-            # Define the base path for storing alert screenshots (outside static folder)
-            # Ensure this path is configured in your Flask app config
-            alerts_base_path = self.app_instance.config.get('ALERT_SCREENSHOTS_BASE_PATH', 'flaskr/storage/alert_screenshots')
 
             # --- Prepare Alert for DB (Set defaults and ensure correct timestamp type) ---
             alert.status = alert.status or AlertStatus.ACTIVE

@@ -288,7 +288,7 @@ def get_alert_rules_for_camera(current_user, camera_id):
         app.logger.error(f"Error fetching alert rules for camera {camera_id}: {str(e)}")
         return jsonify({"error": "Database error occurred"}), 500
     except AttributeError:
-        app.logger.error(f"AlertRule entity likely missing a 'to_dict' method.")
+        app.logger.error("AlertRule entity likely missing a 'to_dict' method.")
         rules_list_manual = []
         for rule in alert_rules:
              rules_list_manual.append({
