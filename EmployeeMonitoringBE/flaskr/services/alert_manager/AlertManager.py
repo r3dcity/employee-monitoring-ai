@@ -1,6 +1,5 @@
 import time
 import os
-import cv2 as cv
 from collections import defaultdict
 from datetime import datetime, timezone
 from flask import g
@@ -35,6 +34,8 @@ class AlertManager:
         Returns:
             bool: True if alert was successfully processed and saved, False otherwise.
         """
+        import cv2 as cv  # only the video worker saves screenshots
+
         current_time = time.time()
         # Assuming rule_id is attached to the alert object by RuleInference
         rule_id = getattr(alert, 'alert_rule_id', None)

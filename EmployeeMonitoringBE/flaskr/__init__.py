@@ -52,6 +52,10 @@ def create_app(test_config=None):
     from flaskr.init_auth_db import seed_command
     app.cli.add_command(seed_command)
 
+    from flaskr.cli import migrate_command, make_migration_command
+    app.cli.add_command(migrate_command)
+    app.cli.add_command(make_migration_command)
+
     @app.errorhandler(413)
     def file_too_large(e):
         return jsonify({"message": "Uploaded file is too large"}), 413

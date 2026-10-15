@@ -1,6 +1,7 @@
 import os
 
 import click
+from flask.cli import with_appcontext
 
 from flaskr.db import get_users_db
 from flaskr.entities.auth_db.Role import Role
@@ -11,6 +12,7 @@ from flaskr.seed import seed_roles_and_permissions
 
 
 @click.command("seed")
+@with_appcontext
 @click.option("--admin-email", default=lambda: os.getenv("SEED_ADMIN_EMAIL"), help="Optional first admin account")
 @click.option("--admin-password", default=lambda: os.getenv("SEED_ADMIN_PASSWORD"))
 @click.option("--organization", default=lambda: os.getenv("SEED_ORGANIZATION", "Default organization"))

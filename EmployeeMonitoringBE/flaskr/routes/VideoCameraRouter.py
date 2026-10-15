@@ -6,13 +6,10 @@ from flaskr.entities.VideoCamera import VideoCamera
 from flaskr.entities.Employee import Employee
 from flaskr.entities.Alert import Alert
 from flaskr.entities.alert_system.AlertRule import AlertRule
-import cv2 as cv
 import numpy as np
-import face_recognition
 import io
 from threading import Thread, Lock
 import time
-from ultralytics import YOLO
 from flaskr.services.rule_system.RuleInference import RuleInference
 from flaskr.services.alert_manager.AlertManager import AlertManager
 from flaskr.entities.Zone import Zone
@@ -130,6 +127,11 @@ def _process_camera_frames(camera_name, rtsp_url,
                           app_instance,
                           tenant_id,
                           generation):
+    # Video/ML libraries are only needed by the worker, not by the REST API
+    import cv2 as cv
+    import face_recognition
+    from ultralytics import YOLO
+
     key = stream_key(tenant_id, camera_name)
     with app_instance.app_context():
         g.tenant_id = tenant_id

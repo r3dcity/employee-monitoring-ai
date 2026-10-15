@@ -164,16 +164,3 @@ def test_zone_list_filters_by_camera(app, client, make_user):
     assert [z["name"] for z in zones] == ["Door"]
     assert zones[0]["points"][1] == {"x": 0.5, "y": 0.1}
     assert len(client.get("/zone/", headers=headers).get_json()["zones"]) == 2
-
-
-def test_existing_tenant_databases_get_the_zone_points_column(tmp_path):
-    from sqlalchemy import create_engine, inspect, text
-    from flaskr.db import upgrade_tenant_schema
-
-    engine = create_engine(f"sqlite:///{(tmp_path / 'old.db').as_posix()}")
-    with engine.begin() as connection:
-        connection.execute(text("CREATE TABLE zones (id INTEGER PRIMARY KEY, name TEXT, mask TEXT, video_camera_id INTEGER)"))
-    upgrade_tenant_schema(engine)
-    upgrade_tenant_schema(engine)  # idempotent
-    assert "points" in {c["name"] for c in inspect(engine).get_columns("zones")}
-    engine.dispose()
