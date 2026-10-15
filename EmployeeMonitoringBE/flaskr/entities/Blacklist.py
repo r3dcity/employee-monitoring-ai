@@ -1,7 +1,5 @@
 from flaskr.entities.BaseEntity import Entity, mapped_column, Mapped
-from enum import Enum
 from sqlalchemy import ForeignKey
-from sqlalchemy.orm import relationship
 
 class Blacklist(Entity):
     __tablename__ = "Blacklist"

@@ -1,0 +1,4 @@
+# Tests and tooling (the ML libraries are stubbed in tests)
+-r requirements-api.txt
+pytest>=8,<10
+ruff>=0.6

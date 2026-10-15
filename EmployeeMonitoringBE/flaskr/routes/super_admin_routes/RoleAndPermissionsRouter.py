@@ -4,7 +4,6 @@ from flaskr.entities.auth_db.Role import Role
 from flaskr.entities.auth_db.Permission import Permission
 from flaskr.entities.auth_db.RolePermission import RolePermission
 from flaskr.middlewares.RoleMiddleware import role_required
-from flaskr.middlewares.AuthMiddleware import auth_required
 
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")

@@ -1,6 +1,5 @@
 from sqlalchemy import ForeignKey
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
-from sqlalchemy import ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 import uuid
 

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine
 from flaskr.entities.auth_db.AuthBaseEntity import AuthBaseEntity
 from flaskr.entities.BaseEntity import Entity
 from flask import current_app, g
@@ -7,6 +7,7 @@ import threading
 from sqlalchemy.orm import Session, sessionmaker, configure_mappers
 
 from flaskr.entities.PPE import PPE
+from flaskr.migrations.runner import upgrade_database
 # Registry stores engines and session factories
 engine_registry = {}
 session_factory_registry = {}
@@ -60,7 +61,7 @@ def setup_users_db(app):
     if not database_exists(engine.url):
         create_database(engine.url)
 
-    AuthBaseEntity.metadata.create_all(bind=engine)
+    upgrade_database(engine, "users", AuthBaseEntity.metadata)
 
     with registry_lock:
         engine_registry['users'] = engine
@@ -69,18 +70,6 @@ def setup_users_db(app):
             bind=engine,
             class_=RoutingSession
         )
-
-
-def upgrade_tenant_schema(engine):
-    """Add columns introduced after a tenant database was created.
-
-    create_all() only creates missing tables, never missing columns. This keeps existing
-    databases working until schema changes are handled by proper migrations.
-    """
-    zone_columns = {column["name"] for column in inspect(engine).get_columns("zones")}
-    if "points" not in zone_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE zones ADD COLUMN points TEXT"))
 
 
 def setup_tenant_db(tenant_id):
@@ -103,8 +92,7 @@ def setup_tenant_db(tenant_id):
             create_database(engine.url)
             first_time_created = True
 
-        Entity.metadata.create_all(bind=engine)
-        upgrade_tenant_schema(engine)
+        upgrade_database(engine, "tenant", Entity.metadata)
         configure_mappers()
         factory = sessionmaker(autoflush=False, bind=engine, class_=RoutingSession)
 

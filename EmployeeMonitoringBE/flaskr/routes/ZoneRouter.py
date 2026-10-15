@@ -9,7 +9,6 @@ from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
 from flaskr.routes.VideoCameraRouter import active_cameras, camera_locks, stream_key
 from flaskr.services.storage import tenant_dir, relative_to_base
 import json
-import cv2 as cv
 import numpy as np
 
 bp = Blueprint("zone", __name__, url_prefix="/zone")
@@ -61,6 +60,8 @@ def get_zones(current_user):
 @bp.route("/", methods=["POST"])
 @permission_required("CREATE_ZONE")
 def create_zone(current_user):
+    import cv2 as cv  # only needed to render the zone mask
+
     db = get_tenant_db()
     try:
         data = request.get_json(silent=True)
