@@ -11,7 +11,6 @@ const VideoCamerasPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
-    const [streamKey, setStreamKey] = useState(Date.now());
     const { token } = useUser();
     const navigate = useNavigate();
 
@@ -44,7 +43,6 @@ const VideoCamerasPage = () => {
     const handleRefresh = () => {
         setRefreshing(true);
         fetchCameras();
-        setStreamKey(Date.now());
     };
 
     return (
@@ -97,7 +95,6 @@ const VideoCamerasPage = () => {
                                 camera={camera}
                                 detailed={true}
                                 onClickHandler={handleCameraClick}
-                                streamKey={streamKey}
                             />
                         ))}
                     </div>

@@ -12,7 +12,8 @@ const VideoCamerasRegisterPage = () => {
         port: '',
         username: '',
         password: '',
-        location: ''
+        location: '',
+        stream_path: '/stream1'
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -180,6 +181,26 @@ const VideoCamerasRegisterPage = () => {
                                     required
                                 />
                                 <p className="mt-1 text-xs text-neutral-400">Default RTSP port is typically 554</p>
+                            </div>
+
+                            {/* RTSP path */}
+                            <div className="col-span-1">
+                                <label htmlFor="stream_path" className="block text-sm font-medium text-neutral-300 mb-2">
+                                    Stream Path
+                                </label>
+                                <input
+                                    type="text"
+                                    id="stream_path"
+                                    name="stream_path"
+                                    value={formData.stream_path}
+                                    onChange={handleChange}
+                                    className="w-full bg-neutral-700 border border-neutral-600 rounded-md py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                                    placeholder="/stream1"
+                                    pattern="/.*"
+                                />
+                                <p className="mt-1 text-xs text-neutral-400">
+                                    Depends on the camera: Tapo /stream1 (HD) or /stream2 (SD), Hikvision /Streaming/Channels/101
+                                </p>
                             </div>
 
                             {/* Username */}

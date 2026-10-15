@@ -11,7 +11,10 @@ class VideoCamera(Entity):
     port: Mapped[str] = mapped_column()
 
     username: Mapped[str] = mapped_column()
+    # Encrypted at rest when CAMERA_SECRET_KEY is set (see services/secrets_box.py)
     password: Mapped[str] = mapped_column()
+    # Path of the RTSP stream on the camera, e.g. "/stream2" (Tapo) or "/Streaming/Channels/101"
+    stream_path: Mapped[str] = mapped_column(nullable=True, default="/stream1")
 
     name: Mapped[str] = mapped_column()
     location: Mapped[str] = mapped_column()

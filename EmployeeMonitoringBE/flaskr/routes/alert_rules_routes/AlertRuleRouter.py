@@ -1,4 +1,6 @@
 from flask import Blueprint, request,jsonify, current_app as app
+from flaskr.services.streaming import streams
+from flask import g
 from flaskr.db import get_tenant_db
 from flaskr.middlewares.PermissionMiddleware import permission_required
 from sqlalchemy.exc import SQLAlchemyError
@@ -145,6 +147,8 @@ def create_alert_rule(current_user):
 
         db.add(alert_rule)
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
 
         return jsonify({"message": "Alert rule created successfully", "alert_rule_id": alert_rule.id}), 201
 
@@ -219,6 +223,8 @@ def update_alert_rule(current_user, rule_id):
             apply_location(db, alert_rule, data["location"])
 
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
         return jsonify({"message": "Alert rule updated successfully"}), 200
 
     except (RuleValidationError, ValueError, TypeError) as e:
@@ -249,6 +255,8 @@ def delete_alert_rule(current_user, rule_id):
 
         db.delete(alert_rule)
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
         return jsonify({"message": "Alert rule deleted successfully"}), 200
 
     except SQLAlchemyError as e:

@@ -43,6 +43,27 @@ from flaskr.services.AuthService import create_access_token, hash_password  # no
 JWT_SECRET = "test-secret-that-is-at-least-32-bytes-long"
 
 
+class OfflineCapture:
+    def isOpened(self):
+        return False
+
+    def release(self):
+        pass
+
+
+class OfflineVision:
+    """Camera workers in API tests: cameras never connect, nothing heavy is loaded."""
+    open_capture = staticmethod(lambda url: OfflineCapture())
+    encode_jpeg = staticmethod(lambda frame: b"jpeg")
+    draw = staticmethod(lambda frame, *args: frame)
+
+    def make_detector(self):
+        raise RuntimeError("no detector in tests")
+
+    def make_face_recognizer(self, known_faces):
+        raise RuntimeError("no face recognizer in tests")
+
+
 @pytest.fixture
 def app(tmp_path):
     db_module.engine_registry.clear()
@@ -59,9 +80,11 @@ def app(tmp_path):
         "MASK_ZONES_PATH": str(static / "mask_zones"),
         "PPE_PICTURES_PATH": str(static / "ppe_pictures"),
     })
+    app.extensions["streams"].toolkit = OfflineVision()
     with app.app_context():
         seed_roles_and_permissions(db_module.get_users_db())
     yield app
+    app.extensions["streams"].shutdown()
     for engine in db_module.engine_registry.values():
         engine.dispose()
     db_module.engine_registry.clear()

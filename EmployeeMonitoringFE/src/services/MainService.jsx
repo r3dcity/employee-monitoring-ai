@@ -55,6 +55,21 @@ export const createVideoCamera = (cameraData) => {
   return apiClient.post("/video-cameras", cameraData);
 };
 
+export const updateCamera = (cameraId, cameraData) => {
+  return apiClient.put(`/video-cameras/${cameraId}`, cameraData);
+};
+
+// Where to watch a camera: { webrtc: url | null, mjpeg: url } with short-lived tickets
+export const getPlayback = (cameraId) => {
+  return apiClient.get(`/video-cameras/${cameraId}/playback`);
+};
+
+// URL (relative to the API) of the Server-Sent Events stream, with a fresh ticket
+export const getEventsUrl = async () => {
+  const response = await apiClient.post("/events/ticket");
+  return response.data.url;
+};
+
 export const deleteCamera = (cameraId) => {
   return apiClient.delete(`/video-cameras/${cameraId}`);
 };

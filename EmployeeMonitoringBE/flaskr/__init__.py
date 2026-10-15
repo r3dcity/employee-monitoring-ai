@@ -4,6 +4,11 @@ from dotenv import load_dotenv
 import os
 
 
+def env_flag(name, default):
+    value = os.getenv(name)
+    return default if value is None else value.strip().lower() in ("1", "true", "yes", "on")
+
+
 def create_app(test_config=None):
     # static_folder=None: uploads (faces, screenshots) are only served through authenticated routes
     app = Flask(__name__, instance_relative_config=True, static_folder=None)
@@ -39,6 +44,19 @@ def create_app(test_config=None):
         PPE_MODEL_PATH=os.path.join(app.root_path, "ML", "PPE_model", "my_model.pt"),
         ALLOWED_EXTENSIONS=["png", "jpg", "jpeg"],
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,
+        CAMERA_SECRET_KEY=os.getenv("CAMERA_SECRET_KEY"),
+        # Camera workers (see services/streaming)
+        START_CAMERA_WORKERS=env_flag("START_CAMERA_WORKERS", True),
+        DETECT_FPS=float(os.getenv("DETECT_FPS", 5)),
+        FACE_FPS=float(os.getenv("FACE_FPS", 1)),
+        STREAM_FPS=float(os.getenv("STREAM_FPS", 12)),
+        DETECT_ALWAYS=env_flag("DETECT_ALWAYS", True),
+        # Optional MediaMTX relay for WebRTC playback
+        MEDIAMTX_API_URL=os.getenv("MEDIAMTX_API_URL"),
+        MEDIAMTX_RTSP_URL=os.getenv("MEDIAMTX_RTSP_URL", "rtsp://mediamtx:8554"),
+        MEDIAMTX_WEBRTC_URL=os.getenv("MEDIAMTX_WEBRTC_URL", "/media"),
+        MEDIA_INTERNAL_USER=os.getenv("MEDIA_INTERNAL_USER", "emonitoring"),
+        MEDIA_INTERNAL_PASSWORD=os.getenv("MEDIA_INTERNAL_PASSWORD"),
     )
     if test_config is not None:
         app.config.from_mapping(test_config)
@@ -55,6 +73,21 @@ def create_app(test_config=None):
     from flaskr.cli import migrate_command, make_migration_command
     app.cli.add_command(migrate_command)
     app.cli.add_command(make_migration_command)
+
+    from flaskr.services.streaming.media_relay import MediaRelay
+    from flaskr.services.streaming.supervisor import StreamSupervisor
+    supervisor = StreamSupervisor(app, relay=MediaRelay.from_config(app.config))
+    app.extensions["streams"] = supervisor
+    # Workers start with the first request, so CLI commands (seed, migrate) and the debug
+    # reloader's parent process never start them.
+    if app.config["START_CAMERA_WORKERS"] and not app.testing:
+        started = []
+
+        @app.before_request
+        def start_camera_workers():
+            if not started:
+                started.append(True)
+                supervisor.start_background()
 
     @app.errorhandler(413)
     def file_too_large(e):

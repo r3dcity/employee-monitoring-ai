@@ -12,7 +12,7 @@ import {
   getErrorMessage,
 } from "../../services/MainService";
 import { useUser } from "../../context/UserContext";
-import { buildStreamUrl as buildCameraStreamUrl } from "../../utils/streamUrl";
+import CameraPlayer from "../../components/video/CameraPlayer";
 import {
   FiSave,
   FiPlus,
@@ -35,124 +35,6 @@ import {
   FiToggleRight,
 } from "react-icons/fi";
 
-import excavatorImg from "../../assets/objects/excavator.jpg";
-import glovesImg from "../../assets/objects/gloves.jpg";
-import hardhatImg from "../../assets/objects/hardhat.jpg";
-import ladderImg from "../../assets/objects/ladder.jpg";
-import maskImg from "../../assets/objects/mask.jpg";
-import noHardhatImg from "../../assets/objects/no-hardhat.jpg";
-import noMaskImg from "../../assets/objects/no-mask.jpg";
-import noSafetyVestImg from "../../assets/objects/no-safety-vest.jpg";
-import personImg from "../../assets/objects/person.jpg";
-import suvImg from "../../assets/objects/suv.jpg";
-import safetyConeImg from "../../assets/objects/safety-cone.jpg";
-import safetyVestImg from "../../assets/objects/safety-vest.jpg";
-import busImg from "../../assets/objects/bus.jpg";
-import dumpTruckImg from "../../assets/objects/dump-truck.jpg";
-import fireHydrantImg from "../../assets/objects/fire-hydrant.jpg";
-import machineryImg from "../../assets/objects/machinery.jpg";
-import miniVanImg from "../../assets/objects/mini-van.jpg";
-import sedanImg from "../../assets/objects/sedan.jpg";
-import semiImg from "../../assets/objects/semi.jpg";
-import trailerImg from "../../assets/objects/trailer.jpg";
-import truckImg from "../../assets/objects/truck.jpg";
-import truckAndTrailerImg from "../../assets/objects/truck-and-trailer.jpg";
-import vanImg from "../../assets/objects/van.jpg";
-import vehicleImg from "../../assets/objects/vehicle.jpg";
-import wheelLoaderImg from "../../assets/objects/wheel-loader.jpg";
-import faceRecognitionImg from "../../assets/objects/face-recognition.jpg";
-
-const ppeImageMapping = {
-  Excavator: excavatorImg,
-  Gloves: glovesImg,
-  Hardhat: hardhatImg,
-  Ladder: ladderImg,
-  Mask: maskImg,
-  "NO-Hardhat": noHardhatImg,
-  "NO-Mask": noMaskImg,
-  "NO-Safety Vest": noSafetyVestImg,
-  Person: personImg,
-  SUV: suvImg,
-  "Safety Cone": safetyConeImg,
-  "Safety Vest": safetyVestImg,
-  bus: busImg,
-  "dump truck": dumpTruckImg,
-  "fire hydrant": fireHydrantImg,
-  machinery: machineryImg,
-  "mini-van": miniVanImg,
-  sedan: sedanImg,
-  semi: semiImg,
-  trailer: trailerImg,
-  truck: truckImg,
-  "truck and trailer": truckAndTrailerImg,
-  van: vanImg,
-  vehicle: vehicleImg,
-  "wheel loader": wheelLoaderImg,
-  face_recognition: faceRecognitionImg,
-};
-
-// Rule conditions may use any casing ("person"); stream filters need the detector's class name
-const detectorNames = Object.keys(ppeImageMapping);
-const toDetectorName = (name) =>
-  detectorNames.find((d) => d.toLowerCase() === String(name).toLowerCase()) || name;
-
-const extractRequiredFiltersFromRules = (rules) => {
-  const requiredFilters = new Set();
-  let needsFaceRecognition = false;
-
-  rules.forEach((rule) => {
-    if (!rule.is_active) return;
-
-    try {
-      // Parse conditions_json if it's a string
-      const conditions =
-        typeof rule.conditions_json === "string"
-          ? JSON.parse(rule.conditions_json).conditions
-          : rule.conditions_json.conditions;
-
-      if (!conditions) return;
-
-      conditions.forEach((condition) => {
-        if (condition.type === "face_recognition") {
-          needsFaceRecognition = true;
-        }
-
-        // For object detection, add the object name to required filters
-        if (condition.type === "object_detected" && condition.object_name) {
-          requiredFilters.add(toDetectorName(condition.object_name));
-        }
-
-        // For PPE missing conditions, we need specific detectors
-        if (condition.type === "ppe_missing") {
-          const ppeType = condition.ppe_type;
-          if (ppeType === "mask") {
-            requiredFilters.add("NO-Mask");
-            requiredFilters.add("Person");
-          } else if (ppeType === "helmet") {
-            requiredFilters.add("NO-Hardhat");
-            requiredFilters.add("Person");
-          } else if (ppeType === "vest") {
-            requiredFilters.add("NO-Safety Vest");
-            requiredFilters.add("Person");
-          }
-        }
-
-        // For object count conditions
-        if (condition.type === "object_count" && condition.object_name) {
-          requiredFilters.add(toDetectorName(condition.object_name));
-        }
-      });
-    } catch (err) {
-      console.error("Error parsing rule conditions:", err);
-    }
-  });
-
-  return {
-    objectFilters: Array.from(requiredFilters),
-    needsFaceRecognition,
-  };
-};
-
 const IndividualVideoCameraPage = () => {
   const { cameraId } = useParams();
   const navigate = useNavigate();
@@ -164,11 +46,9 @@ const IndividualVideoCameraPage = () => {
   const [currentZone, setCurrentZone] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [streamUrl, setStreamUrl] = useState("");
   const [isStreamActive, setIsStreamActive] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const { token } = useUser();
-  const [filters, setFilters] = useState([]);
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
   const [cameraRules, setCameraRules] = useState([]);
   const [rulesLoading, setRulesLoading] = useState(false);
@@ -176,30 +56,9 @@ const IndividualVideoCameraPage = () => {
   const optionsButtonRef = useRef(null);
 
   const videoContainerRef = useRef(null);
-  const streamRef = useRef(null);
-
-  const handleSaveFilters = () => {
-    let checkedFilters = [];
-    const filterCheckboxes = document.querySelectorAll(
-      '#expandableDiv input[type="checkbox"][data-filter-label]'
-    );
-    filterCheckboxes.forEach((checkbox) => {
-      if (checkbox.checked) {
-        checkedFilters.push(checkbox.getAttribute("data-filter-label"));
-      }
-    });
-
-    // Set both filters array and face recognition state
-    setFilters(checkedFilters);
-    setStreamUrl(buildStreamUrl(checkedFilters));
-  };
-
-  const buildStreamUrl = (selectedFilters = null) =>
-    buildCameraStreamUrl(camera?.name, token, selectedFilters || filters);
 
   const fetchCameraData = async () => {
     setRefreshing(true);
-    setIsStreamActive(false);
     setError(null);
     setRulesLoading(true);
     setRulesError(null);
@@ -207,15 +66,6 @@ const IndividualVideoCameraPage = () => {
       const response = await getCamera(cameraId);
       const cam = response.data.camera;
       setCamera(cam);
-
-      // Create initial filters array that includes face_recognition if enabled
-      const initialFilters = [];
-      if (cam?.filters?.includes("face_recognition")) {
-        initialFilters.push("face_recognition");
-      }
-
-      setFilters(initialFilters);
-      setStreamUrl(buildCameraStreamUrl(cam?.name, token, initialFilters));
 
       try {
         const zonesResponse = await getZones(cameraId);
@@ -234,7 +84,6 @@ const IndividualVideoCameraPage = () => {
     } catch (err) {
       console.error("Failed to fetch camera details:", err);
       setError("Failed to load camera details. Please try again later.");
-      setStreamUrl("");
     } finally {
       setRefreshing(false);
       setLoading(false);
@@ -248,18 +97,8 @@ const IndividualVideoCameraPage = () => {
     } else {
       setError("Missing camera ID or authentication.");
       setLoading(false);
-      setIsStreamActive(false);
-      setStreamUrl("");
     }
   }, [cameraId, token]);
-
-  useEffect(() => {
-    if (camera && token) {
-      setStreamUrl(buildStreamUrl());
-      setIsStreamActive(false);
-      setError(null);
-    }
-  }, [camera, token, filters]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -277,46 +116,10 @@ const IndividualVideoCameraPage = () => {
     };
   }, [optionsButtonRef]);
 
-  useEffect(() => {
-    // When camera rules load or change, extract required filters from them
-    if (cameraRules.length > 0) {
-      const { objectFilters, needsFaceRecognition } =
-        extractRequiredFiltersFromRules(cameraRules);
-
-      // If we're not in manual mode (user hasn't set filters), use rule-based filters
-      if (filters.length === 0) {
-        const newFilters = [...objectFilters];
-        if (needsFaceRecognition) {
-          newFilters.push("face_recognition");
-        }
-        setFilters(newFilters);
-      }
-    }
-  }, [cameraRules]);
-
   const handleManualRefresh = () => {
     setLoading(true);
-    setIsStreamActive(false);
     setError(null);
     fetchCameraData();
-  };
-
-  const handleStreamLoad = () => {
-    if (streamRef.current) {
-      streamRef.current.style.display = "block";
-    }
-    setIsStreamActive(true);
-    setError(null);
-  };
-
-  const handleStreamError = () => {
-    setError(
-      "Stream unavailable or failed to load. Please check camera status or refresh."
-    );
-    setIsStreamActive(false);
-    if (streamRef.current) {
-      streamRef.current.style.display = "none";
-    }
   };
 
   const startDrawZone = () => {
@@ -553,7 +356,7 @@ const IndividualVideoCameraPage = () => {
               Loading camera data...
             </div>
           </div>
-        ) : error && !isStreamActive ? (
+        ) : error ? (
           <div
             className="bg-red-800 border border-red-600 text-red-100 px-4 py-3 rounded relative mb-6"
             role="alert"
@@ -576,7 +379,7 @@ const IndividualVideoCameraPage = () => {
                   className={`
                                     px-3 py-1 rounded-full text-sm font-medium flex items-center
                                     ${
-                                      isStreamActive && !error
+                                      isStreamActive
                                         ? "bg-green-500 text-green-900"
                                         : "bg-red-500 text-red-900"
                                     }
@@ -584,52 +387,21 @@ const IndividualVideoCameraPage = () => {
                 >
                   <span
                     className={`mr-1 w-2 h-2 rounded-full ${
-                      isStreamActive && !error
+                      isStreamActive
                         ? "bg-green-900 animate-pulse"
                         : "bg-red-900"
                     }`}
                   ></span>
-                  {isStreamActive && !error ? "LIVE" : "OFFLINE"}
+                  {isStreamActive ? "LIVE" : "OFFLINE"}
                 </div>
               </div>
 
-              <div
-                className="relative aspect-video bg-black"
-                ref={videoContainerRef}
-                onClick={handleCanvasClick}
+              <CameraPlayer
+                camera={camera}
+                onStatusChange={(status) => setIsStreamActive(status === "live")}
               >
-                {streamUrl && camera?.name ? (
-                  <>
-                    <img
-                      ref={streamRef}
-                      key={`stream-${streamUrl}-${filters.join("-")}`}
-                      src={streamUrl}
-                      alt={`Stream from ${camera.name}`}
-                      className="w-full h-full object-fill"
-                      style={{ display: isStreamActive ? "block" : "none" }}
-                      onLoad={handleStreamLoad}
-                      onError={handleStreamError}
-                    />
-                    {!isStreamActive && (
-                      <div className="absolute inset-0 flex items-center justify-center text-neutral-500 bg-black">
-                        {refreshing || (loading && !isStreamActive)
-                          ? "Connecting to stream..."
-                          : error
-                          ? "Stream unavailable"
-                          : "Initializing stream..."}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-neutral-500">
-                    {loading
-                      ? "Loading camera data..."
-                      : !camera?.name
-                      ? "Camera name missing."
-                      : "Stream URL not available."}
-                  </div>
-                )}
-
+                {/* Zone layer: normalized coordinates, so viewBox 0..1 stretched over the video */}
+                <div className="absolute inset-0" ref={videoContainerRef} onClick={handleCanvasClick}>
                 <svg
                   className="absolute inset-0 w-full h-full pointer-events-none"
                   viewBox="0 0 1 1"
@@ -654,7 +426,8 @@ const IndividualVideoCameraPage = () => {
                     />
                   )}
                 </svg>
-              </div>
+                </div>
+              </CameraPlayer>
               {editMode && (
                 <div className="absolute inset-x-0 bottom-4 flex justify-center pointer-events-none">
                   <div className="bg-black/70 text-white px-4 py-2 rounded">
@@ -663,68 +436,11 @@ const IndividualVideoCameraPage = () => {
                 </div>
               )}
 
-              <div>
-                <div className="flex justify-center mt-4">
-                  <button
-                    id="expandableButton"
-                    onClick={(e) => {
-                      const expandableDiv =
-                        document.getElementById("expandableDiv");
-                      const arrowIcon = e.currentTarget.querySelector("svg");
-
-                      if (
-                        expandableDiv.style.display === "none" ||
-                        !expandableDiv.style.display
-                      ) {
-                        arrowIcon.classList.add("rotate-180");
-                        expandableDiv.style.display = "block";
-                      } else {
-                        expandableDiv.style.display = "none";
-                        arrowIcon.classList.remove("rotate-180");
-                      }
-                    }}
-                    className="p-2 rounded-full flex bg-neutral-700 hover:bg-neutral-600 transition-transform duration-300"
-                  >
-                    <FiArrowDown size={20} className="mr-2" />
-                    <p className="text-neutral-300">Select filters</p>
-                  </button>
-                </div>
-                <div
-                  id="expandableDiv"
-                  style={{ display: "none" }}
-                  className="mt-4 p-4 bg-neutral-800 rounded-lg"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-                    {Object.entries(ppeImageMapping).map(([label, image]) => (
-                      <div
-                        key={label}
-                        className="flex items-center bg-neutral-700 rounded p-3 shadow"
-                      >
-                        <img
-                          src={image}
-                          alt={label}
-                          className="w-10 h-10 rounded bg-neutral-600 mr-3 object-cover"
-                        />
-                        <span className="flex-1 text-neutral-200">{label}</span>
-                        <input
-                          data-filter-label={label}
-                          type="checkbox"
-                          className="w-5 h-5 accent-cyan-600"
-                          defaultChecked={filters.includes(label)}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex justify-center">
-                    <button
-                      className="cursor-pointer mt-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-4 rounded"
-                      onClick={handleSaveFilters}
-                    >
-                      Save Filters
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <p className="mt-3 text-sm text-neutral-400 flex items-center">
+                <FiInfo className="mr-2 flex-shrink-0" />
+                Detection runs continuously on the server, even when nobody is watching. The
+                camera&apos;s active rules decide which alerts are raised.
+              </p>
             </div>
 
             <div className="bg-neutral-800 rounded-lg shadow-md p-4 flex flex-col">
@@ -769,7 +485,7 @@ const IndividualVideoCameraPage = () => {
                   </span>
                   <span className="font-mono">{camera?.username || "N/A"}</span>
                 </p>
-              
+
                 <p className="flex justify-between py-2 border-b border-neutral-700">
                   <span className="text-neutral-400 flex items-center">
                     <FiAlertCircle className="mr-2" />
@@ -777,16 +493,10 @@ const IndividualVideoCameraPage = () => {
                   </span>
                   <span
                     className={
-                      isStreamActive && !error
-                        ? "text-green-400"
-                        : "text-red-400"
+                      isStreamActive ? "text-green-400" : "text-red-400"
                     }
                   >
-                    {isStreamActive && !error
-                      ? "Active"
-                      : error
-                      ? "Error"
-                      : "Inactive"}
+                    {isStreamActive ? "Active" : camera?.stream_status || "Inactive"}
                   </span>
                 </p>
                 <p className="flex justify-between py-2 border-b border-neutral-700">
@@ -795,9 +505,9 @@ const IndividualVideoCameraPage = () => {
                     RTSP URL:
                   </span>
                   <span className="font-mono text-xs break-all">
-                    rtsp://{camera?.username}:
-                    {camera?.password ? "********" : ""}@{camera?.ip}:
-                    {camera?.port}/stream2
+                    rtsp://{camera?.username}:********@{camera?.ip}:
+                    {camera?.port}
+                    {camera?.stream_path}
                   </span>
                 </p>
               </div>

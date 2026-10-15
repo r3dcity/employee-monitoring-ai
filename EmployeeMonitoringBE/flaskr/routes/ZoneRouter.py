@@ -6,7 +6,8 @@ from flaskr.entities.Zone import Zone
 from flaskr.entities.Blacklist import Blacklist
 from flaskr.entities.Alert import Alert
 from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
-from flaskr.routes.VideoCameraRouter import active_cameras, camera_locks, stream_key
+from flaskr.entities.VideoCamera import VideoCamera
+from flaskr.services.streaming import streams
 from flaskr.services.storage import tenant_dir, relative_to_base
 import json
 import numpy as np
@@ -57,75 +58,68 @@ def get_zones(current_user):
         return {"message": "Something went wrong"}, 500
 
 
+def save_zone_snapshot(camera_id, zone_name, normalized):
+    """Save the camera's current frame with everything outside the zone blacked out.
+
+    Only a visual record: detection uses the polygon points. Returns the stored path, or ""
+    when the camera has no frame right now (zones can be drawn while a camera is offline).
+    """
+    worker = streams().ensure(g.tenant_id, camera_id)
+    frame = worker.latest_frame()[0] if worker is not None else None
+    if frame is None:
+        return ""
+    import cv2 as cv  # only needed to render the snapshot
+
+    height, width = frame.shape[:2]
+    polygon = np.array([[round(p["x"] * (width - 1)), round(p["y"] * (height - 1))] for p in normalized],
+                       dtype=np.int32).reshape((-1, 1, 2))
+    mask = np.zeros_like(frame)
+    cv.fillPoly(mask, [polygon], (255, 255, 255))
+    ok, encoded = cv.imencode(".png", cv.bitwise_and(frame, mask))
+    if not ok:
+        return ""
+    path = tenant_dir("MASK_ZONES_PATH") / f"{secure_filename(zone_name)}.png"
+    path.write_bytes(encoded.tobytes())
+    return relative_to_base(path, "MASK_ZONES_PATH")
+
+
 @bp.route("/", methods=["POST"])
 @permission_required("CREATE_ZONE")
 def create_zone(current_user):
-    import cv2 as cv  # only needed to render the zone mask
-
     db = get_tenant_db()
     try:
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return {"message": "No data provided"}, 400
-        for field, label in (("zone_name", "Zone name"), ("camera_id", "Video camera id"),
-                             ("points", "Points"), ("camera_name", "Camera name")):
+        for field, label in (("zone_name", "Zone name"), ("camera_id", "Video camera id"), ("points", "Points")):
             if field not in data:
                 return {"message": f"{label} is required"}, 400
 
         zone_name = data.get("zone_name")
         camera_id = data.get("camera_id")
-        camera_name = data.get("camera_name")
         points = data.get("points")
         if not isinstance(points, list) or len(points) < 3:
             return {"message": "A zone needs at least 3 points"}, 400
-
+        if db.get(VideoCamera, camera_id) is None:
+            return {"message": "Camera not found"}, 404
         if db.query(Zone).filter_by(name=zone_name).first():
             return {"message": "Zone with that name already exists"}, 400
 
-        key = stream_key(g.tenant_id, camera_name)
-        lock = camera_locks.get(key)
-        if lock is None:
-            return {"message": "Camera is not active"}, 409
-        with lock:
-            frame_bytes = active_cameras.get(key, {}).get("frame")
-
-        if not frame_bytes:
-            return {"message": "Camera is not active"}, 409
-
-        # Decode the JPEG bytes back to numpy array
-        nparr = np.frombuffer(frame_bytes, np.uint8)
-        frame_snapshot = cv.imdecode(nparr, cv.IMREAD_COLOR)
-
-        if frame_snapshot is None:
-            return {"message": "Failed to decode camera frame"}, 400
-
-        # Points are normalized (0..1) by the client so they do not depend on the size the
-        # stream was displayed at; scale them to this frame's resolution for the mask.
+        # Points are normalized (0..1) by the client, so they match the camera frame at any
+        # display size and any stream resolution.
         normalized = [{"x": float(p["x"]), "y": float(p["y"])} for p in points]
         if any(not (0 <= p["x"] <= 1 and 0 <= p["y"] <= 1) for p in normalized):
             return {"message": "Points must be normalized between 0 and 1"}, 400
-        height, width = frame_snapshot.shape[:2]
-        polygon = np.array([[round(p["x"] * (width - 1)), round(p["y"] * (height - 1))] for p in normalized], dtype=np.int32)
-        polygon = polygon.reshape((-1, 1, 2))
-        mask = np.zeros_like(frame_snapshot)
-        cv.fillPoly(mask, [polygon], (255, 255, 255))
-        masked_frame = cv.bitwise_and(frame_snapshot, mask)
-        success_encode, encoded_mask = cv.imencode('.png', masked_frame)
-        if not success_encode:
-            return {"message": "Failed to encode zone mask"}, 500
-
-        filepath = tenant_dir("MASK_ZONES_PATH") / f"{secure_filename(zone_name)}.png"
-        with open(filepath, "wb") as f:
-            f.write(encoded_mask.tobytes())
 
         zone = Zone(
             name=zone_name,
-            mask=relative_to_base(filepath, "MASK_ZONES_PATH"),
+            mask=save_zone_snapshot(camera_id, zone_name, normalized),
             points=json.dumps(normalized),
             video_camera_id=camera_id
         )
         db.add(zone)
         db.commit()
+        streams().notify_changed(g.tenant_id, camera_id)
         return {"message": "Zone created sucessfuly.", "zone": zone.to_dict()}, 201
     except (KeyError, TypeError, ValueError):
         return {"message": "Points must be a list of {x, y} coordinates"}, 400
@@ -150,8 +144,10 @@ def delete_zone(current_user):
         db.query(Blacklist).filter(Blacklist.zone_id == zone_id).delete(synchronize_session=False)
         db.query(RuleZoneLink).filter(RuleZoneLink.zone_id == zone_id).delete(synchronize_session=False)
         db.query(Alert).filter(Alert.zone_id == zone_id).update({Alert.zone_id: None}, synchronize_session=False)
+        camera_id = zone.video_camera_id
         db.delete(zone)
         db.commit()
+        streams().notify_changed(g.tenant_id, camera_id)
         return {"message": "Zone deleted sucessfuly"}, 200
     except Exception as e:
         app.logger.error(e)

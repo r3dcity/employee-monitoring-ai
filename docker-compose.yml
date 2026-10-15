@@ -1,6 +1,6 @@
 # Full stack:            docker compose up --build        -> http://localhost:8080
 # With a fake camera:    docker compose --profile camera-sim up --build
-#   then add a camera in the UI with IP "mediamtx", port "8554" (any username/password).
+#   then add a camera in the UI with IP "fake-camera", port "8554", path "/stream" (any user/password).
 #   Put a video at docker/videos/sample.mp4 to stream it; otherwise a test pattern is used.
 
 services:
@@ -18,7 +18,7 @@ services:
   api:
     build: ./EmployeeMonitoringBE
     env_file:
-      # JWT_SECRET, SECRET_KEY, SENDER_EMAIL, SENDER_PASSWORD (see EmployeeMonitoringBE/.env.example)
+      # JWT_SECRET, SECRET_KEY, SENDER_EMAIL, SENDER_PASSWORD, CAMERA_SECRET_KEY (see .env.example)
       - path: ./EmployeeMonitoringBE/flaskr/.env
         required: false
     environment:
@@ -29,11 +29,31 @@ services:
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@example.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-admin12345}
       SEED_ORGANIZATION: ${SEED_ORGANIZATION:-Demo}
+      # WebRTC playback through the MediaMTX relay
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_RTSP_URL: rtsp://mediamtx:8554
+      MEDIAMTX_WEBRTC_URL: /media
+      MEDIA_INTERNAL_USER: emonitoring
+      MEDIA_INTERNAL_PASSWORD: ${MEDIA_INTERNAL_PASSWORD:-change-me-internal}
     volumes:
       - storage:/data
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      # Also makes sure the camera workers start right after a restart
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      start_period: 20s
+
+  mediamtx:
+    image: bluenviron/mediamtx:1
+    volumes:
+      - ./docker/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      # WebRTC media (the signalling goes through nginx at /media)
+      - "8189:8189/udp"
+      - "8189:8189/tcp"
 
   web:
     build: ./EmployeeMonitoringFE
@@ -41,28 +61,30 @@ services:
       - "8080:80"
     depends_on:
       - api
+      - mediamtx
 
-  # --- camera simulator (optional) ---
-  mediamtx:
+  # --- simulated IP camera (optional): an RTSP server with one stream, no relay involved ---
+  fake-camera:
     image: bluenviron/mediamtx:1
     profiles: ["camera-sim"]
     ports:
-      - "8554:8554"   # RTSP
+      - "8554:8554"   # also reachable from the host: rtsp://localhost:8554/stream
 
-  camera-sim:
+  fake-camera-feed:
     image: linuxserver/ffmpeg:latest
     profiles: ["camera-sim"]
     depends_on:
-      - mediamtx
+      - fake-camera
     volumes:
       - ./docker/videos:/videos:ro
+    restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
         if [ -f /videos/sample.mp4 ]; then SRC="-re -stream_loop -1 -i /videos/sample.mp4";
         else SRC="-re -f lavfi -i testsrc2=size=1280x720:rate=15"; fi;
-        exec ffmpeg $$SRC -an -c:v libx264 -preset veryfast -tune zerolatency -g 30
-        -f rtsp rtsp://mediamtx:8554/stream2
+        exec ffmpeg $$SRC -an -c:v libx264 -preset veryfast -tune zerolatency -g 30 -pix_fmt yuv420p
+        -f rtsp -rtsp_transport tcp rtsp://fake-camera:8554/stream
 
 volumes:
   pgdata:

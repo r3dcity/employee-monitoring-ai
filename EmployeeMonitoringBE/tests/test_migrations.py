@@ -18,7 +18,7 @@ def sqlite_engine(tmp_path, name):
 def test_new_tenant_database_is_created_at_head(tmp_path):
     engine = sqlite_engine(tmp_path, "new.db")
     upgrade_database(engine, "tenant", Entity.metadata)
-    assert revision(engine) == "tenant_0002"
+    assert revision(engine) == "tenant_0003"
     assert "points" in {c["name"] for c in inspect(engine).get_columns("zones")}
     engine.dispose()
 
@@ -34,7 +34,7 @@ def test_pre_alembic_tenant_database_is_upgraded(tmp_path):
     upgrade_database(engine, "tenant", Entity.metadata)
     upgrade_database(engine, "tenant", Entity.metadata)  # running twice is a no-op
 
-    assert revision(engine) == "tenant_0002"
+    assert revision(engine) == "tenant_0003"
     assert "points" in {c["name"] for c in inspect(engine).get_columns("zones")}
     with engine.connect() as connection:
         assert connection.execute(text("SELECT name FROM zones")).scalar() == "Door"
