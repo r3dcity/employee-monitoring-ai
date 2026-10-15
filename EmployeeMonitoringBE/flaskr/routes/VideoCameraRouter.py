@@ -1,122 +1,52 @@
 from flask import current_app, Blueprint, request, Response, g
-from flaskr.db import get_tenant_db, get_users_db
-from flaskr.middlewares.PermissionMiddleware import permission_required
+from flaskr.db import get_tenant_db
+from flaskr.middlewares.AuthMiddleware import authenticate
+from flaskr.middlewares.PermissionMiddleware import permission_required, has_permission
 from flaskr.entities.VideoCamera import VideoCamera
-from flaskr.entities.auth_db.User import User
 from flaskr.entities.Employee import Employee
 from flaskr.entities.Alert import Alert, AlertType, AlertLevel, AlertStatus
 from flaskr.entities.alert_system.AlertRule import AlertRule
-import jwt
 import cv2 as cv
 import numpy as np
 import face_recognition
 import io
 from threading import Thread, Lock
 import time
-import dlib
 from ultralytics import YOLO
 from flaskr.services.rule_system.RuleInference import RuleInference
 from flaskr.services.alert_manager.AlertManager import AlertManager
-from flaskr.entities.Zone import Zone 
+from flaskr.entities.Zone import Zone
 from sqlalchemy.orm import joinedload
 import os
 from collections import defaultdict
 from flaskr.entities.alert_system.RuleCameraLink import RuleCameraLink
 from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
 from datetime import datetime
-#from flask_socketio import send
 
 bp = Blueprint("video-cameras", __name__, url_prefix="/video-cameras")
 
-active_cameras = {}  # camera_name: {"frame": bytes, "clients": count, "running": bool, "filters": [], thread: Thread}
-camera_locks = {}    # camera_name: Lock
+active_cameras = {}  # stream key: {"frame": bytes, "clients": count, "running": bool, "filters": [], "thread": Thread, "generation": int}
+camera_locks = {}    # stream key: Lock
+registry_lock = Lock()  # guards creation of entries in active_cameras / camera_locks
 
 detected_objects = {}
 
-def clear_detected_objects():
-    for camera_name in detected_objects:
-        for object_name in detected_objects[camera_name]:
-            if detected_objects[camera_name][object_name]["timestamp"] < time.time() - 60:
-                detected_objects[camera_name].pop(object_name, None)
-
-def raise_person_detected_alert(camera_name, name, frame, app_instance, tenant_id):
-    with app_instance.app_context():
-        g.tenant_id = tenant_id
-        
-        # Raise alert
-        employee_id = None
-        
-        if name != "Unknown":
-            level = AlertLevel.LOW
-            # get employee id
-            db = get_tenant_db()
-            name_splitted = name.split(" ")
-            firstName = name_splitted[0]
-            lastName = name_splitted[1]
-            
-            employee = db.query(Employee).filter_by(firstName=firstName, lastName=lastName).first()
-            if employee:
-                employee_id = employee.id
-        else:
-            level = AlertLevel.HIGH
-        print(employee_id)
-        # Save matLike frame as jpeg
-        success, jpeg_frame = cv.imencode('.jpg', frame)
-        screenshot_path = None
-        if not success:
-            print(f"Failed to encode frame for camera: {camera_name}")
-        else:
-            # Create directory path if needed
-            alerts_path = current_app.config.get('ALERTS_SCREENSHOTS_PATH', 'flaskr/static/alert_screenshots')
-            os.makedirs(alerts_path, exist_ok=True)
-            
-            # Generate organized filename including timestamp
-            timestamp = int(time.time())
-            date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{camera_name}_{date_str}.jpg"
-            
-            # Save the file in the proper directory
-            full_screenshot_path = os.path.join(alerts_path, filename)
-            with open(full_screenshot_path, "wb") as f:
-                f.write(jpeg_frame.tobytes())
-                
-            # Store the relative path for serving via static routes
-            screenshot_path = f"alert_screenshots/{filename}"
-            
-            print(f"Saved face detection screenshot at: {full_screenshot_path}")
-            
-        alert = Alert(type=AlertType.FACE_DETECTED, level=level, \
-            screenshot=screenshot_path, status=AlertStatus.ACTIVE,\
-                explanation=f"Face detected: {name}", employee_id=employee_id, 
-                # Include the camera ID in the alert
-                camera_id=db.query(VideoCamera).filter_by(name=camera_name).first().id if camera_name else None,
-                zone_id=None)
-        db.add(alert)
-        db.commit()
+def stream_key(tenant_id, camera_name):
+    """Streams are shared per tenant + camera; camera names are only unique inside a tenant."""
+    return f"{tenant_id}:{camera_name}"
 
 def is_valid_port(port):
     return 0 <= int(port) <= 65535
 
-def validate_token(token):
-        try:
-            data = jwt.decode(token, current_app.config["JWT_SECRET"], algorithms=["HS256"])
-            db = get_users_db()
-            logged_user = db.query(User).filter_by(id=data["user_id"]).first()
-            print(logged_user)
-            if logged_user == None:
-                print("Invalid token")
-                return {
-                    "message": "Invalid token",
-                }, 401
-        except Exception as e:
-            print(e)
-            return {
-                "message": "Something went wrong",
-            }, 500
-        
-        g.tenant_id = logged_user.tenant_id
-        return logged_user, 200
-        
+def validate_stream_token(token):
+    """<img> tags cannot send headers, so the stream takes the token as a query parameter."""
+    user, error = authenticate(token)
+    if error:
+        return error
+    if not has_permission(user, "READ_VIDEO_STREAM"):
+        return {"message": "Forbidden"}, 403
+    return user, 200
+
 
 @bp.route("/", methods=["POST"])
 @permission_required("CREATE_VIDEO_CAMERA")
@@ -133,7 +63,7 @@ def create_video_camera(current_user):
 
         if not is_valid_port(data.get("port")):
             return {"message": "Invalid port number"}, 400
-        
+
         ip = data.get("ip")
         port = data.get("port")
         username = data.get("username")
@@ -167,12 +97,42 @@ def create_video_camera(current_user):
         print(e)
         return {"message": "Internal server error"}, 500
 
-def process_camera_frames(camera_name, rtsp_url,
+def is_current_worker(key, generation):
+    entry = active_cameras.get(key)
+    return entry is not None and entry["running"] and entry["generation"] == generation
+
+
+def process_camera_frames(camera_name, rtsp_url, filters, known_face_encodings, known_face_names,
+                          app_instance, tenant_id, generation):
+    """Thread entry point. Whatever happens inside, the stream entry is marked as stopped
+    afterwards (unless a newer worker already replaced this one), so no zombie "running"
+    entries are left behind."""
+    key = stream_key(tenant_id, camera_name)
+    try:
+        _process_camera_frames(camera_name, rtsp_url, filters, known_face_encodings, known_face_names,
+                               app_instance, tenant_id, generation)
+    except Exception:
+        app_instance.logger.exception("Camera worker for %s crashed", camera_name)
+    finally:
+        lock = camera_locks.get(key)
+        if lock is not None:
+            with lock:
+                entry = active_cameras.get(key)
+                if entry is not None and entry["generation"] == generation:
+                    entry["running"] = False
+                    entry["cap"] = None
+                    entry["frame"] = None
+        print(f"Camera stream processing stopped for {camera_name}")
+
+
+def _process_camera_frames(camera_name, rtsp_url,
                           filters,
                           known_face_encodings,
                           known_face_names,
                           app_instance,
-                          tenant_id):
+                          tenant_id,
+                          generation):
+    key = stream_key(tenant_id, camera_name)
     with app_instance.app_context():
         g.tenant_id = tenant_id
         print(f"Starting stream processing for {camera_name} in tenant {tenant_id}")
@@ -202,7 +162,7 @@ def process_camera_frames(camera_name, rtsp_url,
         model = None
         yolo_active_filters = [f for f in filters if f != "face_recognition"]
         if len(yolo_active_filters) != 0:
-            model_path = "flaskr/ML/PPE_model/my_model.pt"
+            model_path = app_instance.config["PPE_MODEL_PATH"]
             try:
                 model = YOLO(model_path, task='detect')
                 print(f"YOLO model loaded successfully from {model_path}")
@@ -215,21 +175,19 @@ def process_camera_frames(camera_name, rtsp_url,
         cap = cv.VideoCapture(rtsp_url)
         #cap = cv.VideoCapture(0)
         cap.set(cv.CAP_PROP_BUFFERSIZE, 2)
-        active_cameras[camera_name]["cap"] = cap
         if not cap.isOpened():
             print(f"Could not open stream for camera: {camera_name}")
-            with camera_locks[camera_name]:
-                active_cameras[camera_name]["running"] = False
+            cap.release()
             return
 
         object_dwell_times_local = defaultdict(dict)
         last_cleanup_time = time.time()
         cleanup_interval = 30
 
-        while active_cameras[camera_name]["running"]:
-            with camera_locks[camera_name]:
-                if active_cameras[camera_name]["clients"] <= 0:
-                    active_cameras[camera_name]["running"] = False
+        while is_current_worker(key, generation):
+            with camera_locks[key]:
+                if active_cameras[key]["clients"] <= 0:
+                    active_cameras[key]["running"] = False
                     print(f"No more clients for camera {camera_name}, stopping stream")
                     break
 
@@ -241,6 +199,7 @@ def process_camera_frames(camera_name, rtsp_url,
 
             current_time = time.time()
             current_frame_ids = set()
+            results = None
 
             try:
                 if "face_recognition" in filters and known_face_encodings:
@@ -248,32 +207,32 @@ def process_camera_frames(camera_name, rtsp_url,
                     rgb_small_frame = np.ascontiguousarray(small_frame[:, :, ::-1])
                     face_locations = face_recognition.face_locations(rgb_small_frame, model="cnn")
                     face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
-                    
+
                     face_names = []
                     for face_encoding in face_encodings:
                         matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
                         name = "Unknown"
-                        
+
                         if len(known_face_encodings) > 0:
                             face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
                             best_match_index = np.argmin(face_distances)
                             if matches[best_match_index]:
                                 name = known_face_names[best_match_index]
                         face_names.append(name)
-                        if camera_name not in detected_objects:
-                            detected_objects[camera_name] = {}
-                        if "face_recognition" not in detected_objects[camera_name]:
-                            detected_objects[camera_name]["face_recognition"] = {}
-                        if name not in detected_objects[camera_name]["face_recognition"]:
-                            detected_objects[camera_name]["face_recognition"][name] = {
+                        if key not in detected_objects:
+                            detected_objects[key] = {}
+                        if "face_recognition" not in detected_objects[key]:
+                            detected_objects[key]["face_recognition"] = {}
+                        if name not in detected_objects[key]["face_recognition"]:
+                            detected_objects[key]["face_recognition"][name] = {
                                 "first_seen": time.time(),
                                 "last_seen": time.time(),
-                                "dwell_time": 0                                   
+                                "dwell_time": 0
                             }
                         else:
-                            detected_objects[camera_name]["face_recognition"][name]["last_seen"] = time.time()
-                            detected_objects[camera_name]["face_recognition"][name]["dwell_time"] = time.time() - detected_objects[camera_name]["face_recognition"][name]["first_seen"]
-                    
+                            detected_objects[key]["face_recognition"][name]["last_seen"] = time.time()
+                            detected_objects[key]["face_recognition"][name]["dwell_time"] = time.time() - detected_objects[key]["face_recognition"][name]["first_seen"]
+
                     for (top, right, bottom, left), name in zip(face_locations, face_names):
                         top *= 4
                         right *= 4
@@ -294,7 +253,7 @@ def process_camera_frames(camera_name, rtsp_url,
                             class_indices.append(idx)
 
                     results = model.track(frame, conf=0.5, iou=0.5, classes=class_indices, persist=True, tracker="bytetrack.yaml")
-                    
+
                     for result in results:
                         boxes = result.boxes
                         for box in boxes:
@@ -306,11 +265,11 @@ def process_camera_frames(camera_name, rtsp_url,
                             label = f"{yolo_labels[cls]} {conf:.2f}"
                             cv.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                             cv.putText(frame, "#" + box_id + " " + label, (x1, y1 - 10), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                            
-                            if camera_name not in detected_objects:
-                                detected_objects[camera_name] = {}
-                                if box_id not in detected_objects[camera_name]:
-                                    detected_objects[camera_name][box_id] = {
+
+                            if key not in detected_objects:
+                                detected_objects[key] = {}
+                                if box_id not in detected_objects[key]:
+                                    detected_objects[key][box_id] = {
                                         "timestamp": time.time(),
                                         "name": yolo_labels[cls],
                                         "first_seen": current_time,
@@ -318,8 +277,8 @@ def process_camera_frames(camera_name, rtsp_url,
                                         "dwell_time": 0,
                                     }
                                 else:
-                                    detected_objects[camera_name][box_id]["last_seen"] = current_time
-                                    detected_objects[camera_name][box_id]["dwell_time"] = current_time - detected_objects[camera_name][box_id]["first_seen"]
+                                    detected_objects[key][box_id]["last_seen"] = current_time
+                                    detected_objects[key][box_id]["dwell_time"] = current_time - detected_objects[key][box_id]["first_seen"]
                 except Exception as e:
                     print(f"Error in YOLO detection: {e}")
 
@@ -333,11 +292,11 @@ def process_camera_frames(camera_name, rtsp_url,
                 "zones_entered": {},     # For zone detection
                 "ppe_status": {}         # For PPE compliance tracking
             }
-            
+
             # Add face recognition data to frame context if applicable
-            # if "face_recognition" in filters and camera_name in detected_objects and "face_recognition" in detected_objects[camera_name]:
+            # if "face_recognition" in filters and key in detected_objects and "face_recognition" in detected_objects[key]:
             #     recognized_persons = []
-            #     for name, data in detected_objects[camera_name]["face_recognition"].items():
+            #     for name, data in detected_objects[key]["face_recognition"].items():
             #         if name != "Unknown":
             #             # If we have a known person, add their ID to detected_persons
             #             # This is a simplified approach - you might need to look up actual employee IDs
@@ -348,7 +307,7 @@ def process_camera_frames(camera_name, rtsp_url,
             #                 if employee:
             #                     recognized_persons.append(employee.id)
             #     frame_context["detected_persons"] = recognized_persons
-            
+
             if "face_recognition" in filters:
                 recognized_persons = []
                 # Process the face_names that were just detected in this frame
@@ -368,9 +327,9 @@ def process_camera_frames(camera_name, rtsp_url,
                 print(f"Frame context detected_persons: {frame_context['detected_persons']}")
 
             # Process detected objects from YOLO
-            if camera_name in detected_objects:
+            if key in detected_objects:
                 object_counts = {}
-                for box_id, obj_data in detected_objects[camera_name].items():
+                for box_id, obj_data in detected_objects[key].items():
                     if box_id != "face_recognition":  # Skip the face recognition entry
                         obj_name = obj_data.get("name")
                         if obj_name:
@@ -382,7 +341,7 @@ def process_camera_frames(camera_name, rtsp_url,
                                 "dwell_time": obj_data.get("dwell_time", 0)
                             }
                 frame_context["detected_objects"] = object_counts
-            
+
             # IMPORTANT: Direct population of detected objects from YOLO results
             # This ensures that even newly detected objects in the current frame are included
             if model is not None and results:
@@ -393,18 +352,18 @@ def process_camera_frames(camera_name, rtsp_url,
                         cls_name = yolo_labels[cls]
                         # Add or increment the count for this object type
                         frame_context["detected_objects"][cls_name] = frame_context["detected_objects"].get(cls_name, 0) + 1
-                
+
                 print(f"Current frame detections: {frame_context['detected_objects']}")
-            
+
             # Set the enriched frame context for inference
             alerts = rule_inference.infer(frame_context)
-    
+
             for alert in alerts:
                 res = alert_manager.process_alert(alert, frame)
                 if res:
                     # signal the alert to the frontend
                     pass
-                    
+
             if current_time - last_cleanup_time > cleanup_interval:
                 disappeared_ids = []
                 for box_id, data in object_dwell_times_local.items():
@@ -419,16 +378,12 @@ def process_camera_frames(camera_name, rtsp_url,
                 print(f"Failed to encode frame for camera: {camera_name}")
                 continue
             frame_bytes = jpeg_frame.tobytes()
-            with camera_locks[camera_name]:
-                if active_cameras.get(camera_name, {}).get("running"):
-                     active_cameras[camera_name]["frame"] = frame_bytes
+            with camera_locks[key]:
+                if is_current_worker(key, generation):
+                    active_cameras[key]["frame"] = frame_bytes
 
+        # The capture is only ever released by the thread that reads from it
         cap.release()
-        print(f"Camera stream processing stopped for {camera_name}")
-        with camera_locks.get(camera_name, Lock()):
-            if camera_name in active_cameras:
-                active_cameras[camera_name]["running"] = False
-                active_cameras[camera_name]["cap"] = None
 
 @bp.route("/", methods=["GET"])
 @permission_required("READ_VIDEO_CAMERA")
@@ -437,21 +392,21 @@ def get_cameras_list(current_user):
     cameras = db.query(VideoCamera).all()
     cameras_list = []
     for camera in cameras:
-        if camera.name not in active_cameras:
+        key = stream_key(g.tenant_id, camera.name)
+        if key not in active_cameras:
             status = "inactive"
         else:
-            status = "active" if active_cameras[camera.name]["running"] else "inactive"
+            status = "active" if active_cameras[key]["running"] else "inactive"
 
         camera_info = {
             "id": camera.id,
             "ip": camera.ip,
             "port": camera.port,
             "username": camera.username,
-            "password": camera.password,
             "name": camera.name,
             "location": camera.location,
             "status": status,
-              "filters": active_cameras[camera.name]["filters"] if camera.name in active_cameras else {
+              "filters": active_cameras[key]["filters"] if key in active_cameras else {
             "face_recognition": False,
             }
         }
@@ -467,10 +422,11 @@ def get_camera_by_id(current_user, camera_id):
     if not camera:
         return {"message": "Camera not found"}, 404
 
-    if camera.name not in active_cameras:
+    key = stream_key(g.tenant_id, camera.name)
+    if key not in active_cameras:
         status = "inactive"
     else:
-        status = "active" if active_cameras[camera.name]["running"] else "inactive"
+        status = "active" if active_cameras[key]["running"] else "inactive"
 
     camera_info = {
         "id": camera.id,
@@ -480,7 +436,7 @@ def get_camera_by_id(current_user, camera_id):
         "name": camera.name,
         "location": camera.location,
         "status": status,
-        "filters": active_cameras[camera.name]["filters"] if camera.name in active_cameras else {
+        "filters": active_cameras[key]["filters"] if key in active_cameras else {
             "face_recognition": False,
         }
     }
@@ -488,10 +444,9 @@ def get_camera_by_id(current_user, camera_id):
 
 @bp.route("/<string:camera_name>/stream", methods=["GET"])
 def get_camera(camera_name):
-    res, code = validate_token(request.args.get("token"))
+    res, code = validate_stream_token(request.args.get("token"))
     if code != 200:
         return res, code
-    current_user = res
 
     valid_filters = [
         "Excavator", "Gloves", "Hardhat", "Ladder", "Mask", "NO-Hardhat", "NO-Mask", "NO-Safety Vest",
@@ -508,7 +463,7 @@ def get_camera(camera_name):
     camera = db.query(VideoCamera).filter_by(name=camera_name).first()
     if not camera:
         return {"message": "Camera not found"}, 404
-    
+
     known_face_encodings = []
     known_face_names = []
     if "face_recognition" in activated_filters:
@@ -522,111 +477,99 @@ def get_camera(camera_name):
             return {"message": "Internal server error"}, 500
 
     rtsp_url = f"rtsp://{camera.username}:{camera.password}@{camera.ip}:{camera.port}/stream2"
-    if camera_name not in active_cameras:
-        active_cameras[camera_name] = {
-            "frame": None,
-            "clients": 0,
-            "running": False,
-            "filters": activated_filters,
-            "thread": None,
-            "cap": None
-        }
-        camera_locks[camera_name] = Lock()
+    key = stream_key(g.tenant_id, camera_name)
+    with registry_lock:
+        if key not in active_cameras:
+            active_cameras[key] = {
+                "frame": None,
+                "clients": 0,
+                "running": False,
+                "filters": activated_filters,
+                "thread": None,
+                "cap": None,
+                "generation": 0
+            }
+            camera_locks[key] = Lock()
 
-    with camera_locks[camera_name]:
-        active_cameras[camera_name]["clients"] += 1
-        clients = active_cameras[camera_name]["clients"]
-        print(f"New client connected to camera {camera_name}. Total clients: {clients}")
-    
-        if active_cameras[camera_name]["running"] and active_cameras[camera_name]["filters"] != activated_filters:
+    with camera_locks[key]:
+        entry = active_cameras[key]
+        entry["clients"] += 1
+        print(f"New client connected to camera {camera_name}. Total clients: {entry['clients']}")
+
+        # A viewer without filters (e.g. a dashboard thumbnail) joins the running stream as-is
+        # instead of switching off detection for everybody else.
+        if entry["running"] and activated_filters and entry["filters"] != activated_filters:
             print(f"Restarting camera stream for {camera_name} due to filter change")
-            
-            if active_cameras[camera_name]["cap"]:
-                active_cameras[camera_name]["cap"].release()
-            active_cameras[camera_name]["running"] = False
-            active_cameras[camera_name]["frame"] = None
+            # The old worker sees the newer generation and exits on its own
+            entry["running"] = False
+            entry["frame"] = None
 
-            old_thread = active_cameras[camera_name]["thread"]
-            if old_thread is not None and old_thread.is_alive():
-                print(f"Waiting for old stream thread for {camera_name} to finish...")
-                old_thread.join(timeout=1)
-                print("Old stream thread finished")
-
-        active_cameras[camera_name]["filters"] = activated_filters
-
-        if not active_cameras[camera_name]["running"]:
-            active_cameras[camera_name]["running"] = True
-            app_instance = current_app._get_current_object()
-            tenant_id_from_request = g.tenant_id
+        if not entry["running"]:
+            entry["generation"] += 1
+            entry["running"] = True
+            entry["filters"] = activated_filters
             process_thread = Thread(target=process_camera_frames,
                                     args=(camera_name, rtsp_url, activated_filters,
                                           known_face_encodings, known_face_names,
-                                          app_instance, tenant_id_from_request))
-            process_thread.daemon = True
-            active_cameras[camera_name]["thread"] = process_thread
+                                          current_app._get_current_object(), g.tenant_id,
+                                          entry["generation"]),
+                                    daemon=True)
+            entry["thread"] = process_thread
             process_thread.start()
-    
+
     def generate_frames_for_client():
         try:
             while True:
-                with camera_locks[camera_name]:
-                    if not camera_name in active_cameras or not active_cameras[camera_name]["running"]:
+                with camera_locks[key]:
+                    entry = active_cameras.get(key)
+                    if entry is None or not entry["running"]:
                         break
-                    
-                    frame = active_cameras[camera_name]["frame"]
-                
+
+                    frame = entry["frame"]
+
                 if frame is not None:
                     yield (b'--frame\r\n'
                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
                 else:
                     time.sleep(0.1)
                     continue
-                
+
                 time.sleep(0.066)
         finally:
-            if camera_name in active_cameras and camera_name in camera_locks:
-                with camera_locks[camera_name]:
-                    active_cameras[camera_name]["clients"] -= 1
-                    remaining = active_cameras[camera_name]["clients"]
+            with camera_locks[key]:
+                if key in active_cameras:
+                    active_cameras[key]["clients"] -= 1
+                    remaining = active_cameras[key]["clients"]
                     print(f"Client disconnected from camera {camera_name}. Remaining clients: {remaining}")
-                
-    return Response(generate_frames_for_client(), mimetype='multipart/x-mixed-replace; boundary=frame', headers={
-        'Access-Control-Allow-Origin': 'http://127.0.0.1:5500',
-        'Access-Control-Allow-Credentials': 'true'
-    })
+
+    return Response(generate_frames_for_client(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 @bp.route("/<int:camera_id>", methods=["DELETE"])
 @permission_required("CREATE_VIDEO_CAMERA")
 def delete_camera(current_user, camera_id):
+    db = get_tenant_db()
     try:
-        db = get_tenant_db()
         if not camera_id:
             return {"message": "No camera ID provided"}, 400
-        
+
         camera = db.query(VideoCamera).filter_by(id=camera_id).first()
         if not camera:
             return {"message": "Camera not found"}, 404
-        
-        if camera.name in active_cameras:
-            with camera_locks[camera.name]:
-                active_cameras[camera.name]["running"] = False
-                if active_cameras[camera.name]["cap"]:
-                    active_cameras[camera.name]["cap"].release()
-                active_cameras.pop(camera.name, None)
-            camera_locks.pop(camera.name, None)
 
+        key = stream_key(g.tenant_id, camera.name)
+        # Alerts keep their history but no longer point at the deleted camera
+        db.query(Alert).filter(Alert.camera_id == camera.id).update({Alert.camera_id: None}, synchronize_session=False)
         db.delete(camera)
         db.commit()
+
+        # Only signal the worker; it releases its own capture (VideoCapture is not thread-safe)
+        if key in camera_locks:
+            with camera_locks[key]:
+                if key in active_cameras:
+                    active_cameras[key]["running"] = False
         return {"message": "Camera deleted successfully"}, 200
-        
+
     except Exception as e:
+        db.rollback()
         current_app.logger.error(e)
         return {"message": "Internal server error"}, 500
-
-@bp.route('/<camera_name>/stream', methods=['OPTIONS'])
-@permission_required("READ_VIDEO_STREAM")
-def handle_options(current_user, camera_name):
-    response = current_app.make_default_options_response()
-    response.headers.add('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response

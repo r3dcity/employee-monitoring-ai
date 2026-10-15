@@ -14,6 +14,7 @@ import {
   FiToggleLeft,
   FiToggleRight,
   FiInfo,
+  FiX,
 } from "react-icons/fi";
 import { LoadingComponent } from "../../components/LoadingComponent"; // Assuming you have this
 
@@ -21,7 +22,7 @@ import { LoadingComponent } from "../../components/LoadingComponent"; // Assumin
 const Modal = ({ isOpen, onClose, children }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+    <div className="fixed inset-0 bg-black/50 z-50 flex justify-center items-center p-4">
       <div className="bg-neutral-800 rounded-lg shadow-xl p-6 w-full max-w-md relative">
         <button
           onClick={onClose}
@@ -52,7 +53,7 @@ const JsonEditor = ({ value, onChange, readOnly = false }) => {
       const parsed = JSON.parse(newText);
       onChange(parsed); // Pass parsed JSON up
       setError("");
-    } catch (err) {
+    } catch {
       setError("Invalid JSON");
     }
   };
@@ -175,7 +176,7 @@ const AlertRulesPage = () => {
     if (
       !formState.conditions_json ||
       !formState.conditions_json.conditions ||
-      !formState.conditions_json.logical_operator
+      !(formState.conditions_json.logical_operator || formState.conditions_json.logic)
     ) {
       setError(
         "Conditions JSON must be valid and contain 'conditions' and 'logical_operator'."

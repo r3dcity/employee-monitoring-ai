@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import Sidebar from "../../components/layout/Sidebar";
 import { getAlerts } from "../../services/MainService";
 import { useUser } from "../../context/UserContext";
@@ -22,24 +22,23 @@ const AlertsPage = () => {
   const [summaryLoading, setSummaryLoading] = useState(false); // Loading state for summary
   const [summaryError, setSummaryError] = useState(null); // Error state for summary
   const { token } = useUser();
-  const navigate = useNavigate();
 
 
   const generateSummary = async () => {
     setSummaryLoading(true);
     setSummaryError(null);
     setSummary(""); // Clear previous summary
-  
+
     const OLLAMA_API_URL = "http://localhost:11434/api/generate"; // Default Ollama API endpoint
     const MODEL_NAME = "openhermes:latest"; // Or your chosen small model
-  
+
     const prompt = `Summarize the provided security alert JSON data. Output a text-only bulleted list in a simple text format without MD elements covering:
 - Overall Status: Total, Active, Resolved counts.
 - Key Trends: Common alert types and locations.
 - Priority Items: Mention any high-priority active alerts.
 - Quick Stats: Include relevant numbers.
 Keep it brief and informative and made for untechnical persons.:\n\n${JSON.stringify(filteredAlerts)}}`;
-  
+
     try {
       const response = await fetch(OLLAMA_API_URL, {
         method: "POST",
@@ -52,15 +51,15 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
           stream: false, // Get the full response at once
         }),
       });
-  
+
       if (!response.ok) {
         throw new Error(`Ollama API request failed: ${response.statusText}`);
       }
-  
+
       const data = await response.json();
       let processedResponse = data.response || "";
       processedResponse = processedResponse.replace(/<think>.*?<\/think>/gs, "");
-   
+
       setSummary(processedResponse.trim() || "No summary could be generated.");
     } catch (err) {
       console.error("Failed to generate summary:", err);
@@ -113,7 +112,7 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
     if (!isoString) return "N/A";
     try {
       return new Date(isoString).toLocaleString();
-    } catch (e) {
+    } catch {
       return isoString;
     }
   };
@@ -295,7 +294,7 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center space-x-3">
-                          
+
                           <Link
                             to={`/alerts/${alert.id}`}
                             className="text-cyan-400 hover:text-cyan-300 text-sm flex items-center"
@@ -313,7 +312,7 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
                   )}
                 </tbody>
               </table>
-              
+
             </div>
           </div>
         )}

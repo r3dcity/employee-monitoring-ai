@@ -83,13 +83,15 @@ def delete_blacklist(current_user):
 
         db = get_tenant_db()
 
-        employees = db.query(Employee.id).filter(Employee.id.in_(employees_ids), zone_id=zone_id).all()
-        # TODO: Asigura-te ca merg cum trebuie liniile urmatore de cod
-        correct_employee_ids = {employee.id for employee in employees}
+        entries = db.query(Blacklist.employee_id).filter(
+            Blacklist.employee_id.in_(employees_ids),
+            Blacklist.zone_id == zone_id
+        ).all()
+        correct_employee_ids = {entry.employee_id for entry in entries}
         wrong_employees = set(employees_ids) - correct_employee_ids
 
         if wrong_employees:
-            return {"message": "Some employee ids are wrong", "employees": list(wrong_employees)}, 400
+            return {"message": "Some employees are not blacklisted in this zone", "employees": list(wrong_employees)}, 400
 
         db.query(Blacklist).filter(Blacklist.employee_id.in_(correct_employee_ids), Blacklist.zone_id == zone_id).delete(synchronize_session=False)
         db.commit()

@@ -15,6 +15,9 @@ const AuthenticatedImage = ({ employeeId, alt }) => {
       return;
     }
 
+    let objectUrl = null;
+    let cancelled = false;
+
     const fetchImage = async () => {
       try {
         // Create a fetch request with authorization headers
@@ -30,12 +33,14 @@ const AuthenticatedImage = ({ employeeId, alt }) => {
 
         // Convert the response to a blob
         const blob = await response.blob();
-        
+
+        if (cancelled) return;
         // Create an object URL from the blob
-        const imageUrl = URL.createObjectURL(blob);
-        setImageData(imageUrl);
+        objectUrl = URL.createObjectURL(blob);
+        setImageData(objectUrl);
         setLoading(false);
       } catch (err) {
+        if (cancelled) return;
         console.error('Error fetching image:', err);
         setError(err.message);
         setLoading(false);
@@ -44,10 +49,11 @@ const AuthenticatedImage = ({ employeeId, alt }) => {
 
     fetchImage();
 
-    // Cleanup function to revoke object URL when component unmounts
+    // Revoke the object URL created by this effect run (the state value would be stale here)
     return () => {
-      if (imageData) {
-        URL.revokeObjectURL(imageData);
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
       }
     };
   }, [employeeId, token]);
@@ -70,8 +76,8 @@ const AuthenticatedImage = ({ employeeId, alt }) => {
   }
 
   return (
-    <img 
-      src={imageData} 
+    <img
+      src={imageData}
       alt={alt}
       className="w-full h-full object-cover"
       onError={() => setError('Failed to load image')}

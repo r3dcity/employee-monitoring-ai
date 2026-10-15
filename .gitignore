@@ -17,3 +17,4 @@ EmployeeMonitoringBE/build/
 EmployeeMonitoringBE/.egg-info/
 
 EmployeeMonitoringFE/node_modules/
+EmployeeMonitoringBE/.venv/

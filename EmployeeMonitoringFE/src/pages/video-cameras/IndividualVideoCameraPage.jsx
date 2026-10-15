@@ -5,23 +5,24 @@ import {
   getCamera,
   getAlertRulesForCamera,
   updateAlertRule,
+  deleteCamera,
+  getZones,
+  createZone,
+  deleteZone as deleteZoneRequest,
+  getErrorMessage,
 } from "../../services/MainService";
 import { useUser } from "../../context/UserContext";
-import { SERVER_URL } from "../../utils/constants";
+import { buildStreamUrl as buildCameraStreamUrl } from "../../utils/streamUrl";
 import {
-  FiEdit,
   FiSave,
   FiPlus,
   FiTrash,
-  FiSquare,
   FiArrowDown,
-  FiArrowUp,
   FiGrid,
   FiArrowLeft,
   FiMapPin,
   FiServer,
   FiLink,
-  FiLock,
   FiWifi,
   FiTag,
   FiAlertCircle,
@@ -33,8 +34,6 @@ import {
   FiToggleLeft,
   FiToggleRight,
 } from "react-icons/fi";
-import axios from "axios";
-import { LoadingComponent } from "../../components/LoadingComponent";
 
 import excavatorImg from "../../assets/objects/excavator.jpg";
 import glovesImg from "../../assets/objects/gloves.jpg";
@@ -92,6 +91,11 @@ const ppeImageMapping = {
   face_recognition: faceRecognitionImg,
 };
 
+// Rule conditions may use any casing ("person"); stream filters need the detector's class name
+const detectorNames = Object.keys(ppeImageMapping);
+const toDetectorName = (name) =>
+  detectorNames.find((d) => d.toLowerCase() === String(name).toLowerCase()) || name;
+
 const extractRequiredFiltersFromRules = (rules) => {
   const requiredFilters = new Set();
   let needsFaceRecognition = false;
@@ -115,7 +119,7 @@ const extractRequiredFiltersFromRules = (rules) => {
 
         // For object detection, add the object name to required filters
         if (condition.type === "object_detected" && condition.object_name) {
-          requiredFilters.add(condition.object_name);
+          requiredFilters.add(toDetectorName(condition.object_name));
         }
 
         // For PPE missing conditions, we need specific detectors
@@ -135,7 +139,7 @@ const extractRequiredFiltersFromRules = (rules) => {
 
         // For object count conditions
         if (condition.type === "object_count" && condition.object_name) {
-          requiredFilters.add(condition.object_name);
+          requiredFilters.add(toDetectorName(condition.object_name));
         }
       });
     } catch (err) {
@@ -147,29 +151,6 @@ const extractRequiredFiltersFromRules = (rules) => {
     objectFilters: Array.from(requiredFilters),
     needsFaceRecognition,
   };
-};
-
-const buildStreamUrlFromRules = () => {
-  if (!camera?.name || !token) return "";
-
-  // Start with the base URL
-  let url = `${SERVER_URL}/video-cameras/${camera.name}/stream?token=${token}`;
-
-  // Add face recognition if needed
-  if (isFaceRecognitionEnabled) {
-    url += "&face_recognition=true";
-  }
-
-  // Add object filters - either from user selection or from rules
-  const activeFilters = filters.length > 0 ? filters : [];
-
-  if (activeFilters.length > 0) {
-    activeFilters.forEach((filter) => {
-      url += `&${filter}=true`;
-    });
-  }
-
-  return url;
 };
 
 const IndividualVideoCameraPage = () => {
@@ -186,8 +167,6 @@ const IndividualVideoCameraPage = () => {
   const [streamUrl, setStreamUrl] = useState("");
   const [isStreamActive, setIsStreamActive] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isFaceRecognitionEnabled, setIsFaceRecognitionEnabled] =
-    useState(false);
   const { token } = useUser();
   const [filters, setFilters] = useState([]);
   const [showOptionsDropdown, setShowOptionsDropdown] = useState(false);
@@ -196,10 +175,8 @@ const IndividualVideoCameraPage = () => {
   const [rulesError, setRulesError] = useState(null);
   const optionsButtonRef = useRef(null);
 
-  const faceRecognitionSliderRef = useRef(null);
   const videoContainerRef = useRef(null);
   const streamRef = useRef(null);
-  const refreshTimerRef = useRef(null);
 
   const handleSaveFilters = () => {
     let checkedFilters = [];
@@ -214,28 +191,11 @@ const IndividualVideoCameraPage = () => {
 
     // Set both filters array and face recognition state
     setFilters(checkedFilters);
-    setIsFaceRecognitionEnabled(checkedFilters.includes("face_recognition"));
     setStreamUrl(buildStreamUrl(checkedFilters));
   };
 
-  const buildStreamUrl = (selectedFilters = null) => {
-    if (!camera?.name || !token) return "";
-
-    // Start with the base URL
-    let url = `${SERVER_URL}/video-cameras/${camera.name}/stream?token=${token}`;
-
-    // Use provided filters or current state
-    const activeFilters = selectedFilters || filters;
-
-    // Add all filters including face recognition
-    if (activeFilters.length > 0) {
-      activeFilters.forEach((filter) => {
-        url += `&${filter}=true`;
-      });
-    }
-
-    return url;
-  };
+  const buildStreamUrl = (selectedFilters = null) =>
+    buildCameraStreamUrl(camera?.name, token, selectedFilters || filters);
 
   const fetchCameraData = async () => {
     setRefreshing(true);
@@ -252,14 +212,17 @@ const IndividualVideoCameraPage = () => {
       const initialFilters = [];
       if (cam?.filters?.includes("face_recognition")) {
         initialFilters.push("face_recognition");
-        setIsFaceRecognitionEnabled(true);
-      } else {
-        setIsFaceRecognitionEnabled(false);
       }
 
       setFilters(initialFilters);
-      console.log(streamUrl)
-      setStreamUrl(buildStreamUrl(initialFilters));
+      setStreamUrl(buildCameraStreamUrl(cam?.name, token, initialFilters));
+
+      try {
+        const zonesResponse = await getZones(cameraId);
+        setZones(zonesResponse.data.zones || []);
+      } catch (zoneErr) {
+        console.error("Failed to fetch zones for camera:", zoneErr);
+      }
 
       try {
         const rulesResponse = await getAlertRulesForCamera(cameraId);
@@ -282,17 +245,6 @@ const IndividualVideoCameraPage = () => {
   useEffect(() => {
     if (cameraId && token) {
       fetchCameraData();
-
-      refreshTimerRef.current = setInterval(() => {
-        if (camera && camera.name) {
-          setIsStreamActive(false);
-          setError(null);
-        }
-      }, 120000);
-
-      return () => {
-        if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-      };
     } else {
       setError("Missing camera ID or authentication.");
       setLoading(false);
@@ -338,7 +290,6 @@ const IndividualVideoCameraPage = () => {
           newFilters.push("face_recognition");
         }
         setFilters(newFilters);
-        setIsFaceRecognitionEnabled(needsFaceRecognition);
       }
     }
   }, [cameraRules]);
@@ -385,7 +336,7 @@ const IndividualVideoCameraPage = () => {
   };
 
   const DeleteModal = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-neutral-800 rounded-lg p-6 max-w-md w-full mx-4">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-xl font-semibold">Confirm Deletion</h3>
@@ -426,21 +377,11 @@ const IndividualVideoCameraPage = () => {
   const handleDeleteConfirm = async () => {
     try {
       setLoading(true);
-      const res = await axios.delete(
-        `${SERVER_URL}/video-cameras/${cameraId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (res.status === 200) {
-        navigate("/video-cameras");
-      } else {
-        setError(res.data.message || "Failed to delete camera.");
-      }
+      await deleteCamera(cameraId);
+      navigate("/video-cameras");
     } catch (err) {
       console.error("Error deleting camera:", err);
-      setError(
-        err.response?.data?.message ||
-          "Failed to delete camera. Please try again."
-      );
+      setError(getErrorMessage(err, "Failed to delete camera. Please try again."));
     } finally {
       setLoading(false);
       setShowOptionsDropdown(false);
@@ -452,54 +393,38 @@ const IndividualVideoCameraPage = () => {
   };
 
   const saveZone = async () => {
-    if (currentZone && currentZone.points.length >= 3) {
-      try {
-        setLoading(true);
-
-        const zoneData = {
-          name: currentZone.name,
-          video_camera_id: cameraId,
-          points: currentZone.points,
-        };
-
-        const response = await axios.post(`${SERVER_URL}/zone`, zoneData, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        setZones([
-          ...zones,
-          {
-            ...currentZone,
-            id: response.data.id || currentZone.id,
-          },
-        ]);
-
-        setEditMode(false);
-        setIsDrawing(false);
-        setCurrentZone(null);
-      } catch (err) {
-        console.error("Failed to save zone:", err);
-        setError("Failed to save zone. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    } else {
+    if (!currentZone || currentZone.points.length < 3) {
       setError("A valid zone must have at least 3 points.");
+      return;
+    }
+    try {
+      setLoading(true);
+      const response = await createZone({
+        name: currentZone.name,
+        cameraId: camera.id,
+        cameraName: camera.name,
+        points: currentZone.points,
+      });
+      setZones((prev) => [...prev, response.data.zone]);
+      setEditMode(false);
+      setIsDrawing(false);
+      setCurrentZone(null);
+    } catch (err) {
+      console.error("Failed to save zone:", err);
+      setError(getErrorMessage(err, "Failed to save zone. Please try again."));
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteZone = async (zoneId) => {
     try {
       setLoading(true);
-
-      await axios.delete(`${SERVER_URL}/zone/${zoneId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      setZones(zones.filter((zone) => zone.id !== zoneId));
+      await deleteZoneRequest(zoneId);
+      setZones((prev) => prev.filter((zone) => zone.id !== zoneId));
     } catch (err) {
       console.error("Failed to delete zone:", err);
-      setError("Failed to delete zone. Please try again.");
+      setError(getErrorMessage(err, "Failed to delete zone. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -508,9 +433,11 @@ const IndividualVideoCameraPage = () => {
   const handleCanvasClick = (e) => {
     if (!isDrawing || !editMode) return;
 
-    const rect = e.target.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Store points normalized to the displayed video (0..1) so they match the camera
+    // frame regardless of the size the stream is shown at.
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    const y = Math.min(Math.max((e.clientY - rect.top) / rect.height, 0), 1);
 
     setCurrentZone((prev) => ({
       ...prev,
@@ -520,11 +447,6 @@ const IndividualVideoCameraPage = () => {
 
   const polygonPoints = (points) => {
     return points.map((point) => `${point.x},${point.y}`).join(" ");
-  };
-
-  const handleToggleFaceRecognition = (event) => {
-    const newFaceRecognitionState = event.target.checked;
-    setIsFaceRecognitionEnabled(newFaceRecognitionState);
   };
 
   const toggleRuleActiveStatus = async (rule) => {
@@ -683,7 +605,7 @@ const IndividualVideoCameraPage = () => {
                       key={`stream-${streamUrl}-${filters.join("-")}`}
                       src={streamUrl}
                       alt={`Stream from ${camera.name}`}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-fill"
                       style={{ display: isStreamActive ? "block" : "none" }}
                       onLoad={handleStreamLoad}
                       onError={handleStreamError}
@@ -708,26 +630,34 @@ const IndividualVideoCameraPage = () => {
                   </div>
                 )}
 
-                <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none"
+                  viewBox="0 0 1 1"
+                  preserveAspectRatio="none"
+                >
                   {zones.map((zone) => (
                     <polygon
                       key={zone.id}
                       points={polygonPoints(zone.points)}
-                      className="fill-cyan-500 fill-opacity-20 stroke-cyan-500 stroke-2"
+                      className="fill-cyan-500/20 stroke-cyan-500"
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
                     />
                   ))}
 
                   {currentZone && currentZone.points.length > 0 && (
                     <polygon
                       points={polygonPoints(currentZone.points)}
-                      class="fill-red-500 opacity-40 stroke-red-700 stroke-2"
+                      className="fill-red-500/40 stroke-red-700"
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
                     />
                   )}
                 </svg>
               </div>
               {editMode && (
                 <div className="absolute inset-x-0 bottom-4 flex justify-center pointer-events-none">
-                  <div className="bg-black bg-opacity-70 text-white px-4 py-2 rounded">
+                  <div className="bg-black/70 text-white px-4 py-2 rounded">
                     Click to add points. Minimum 3 points needed.
                   </div>
                 </div>
@@ -891,18 +821,10 @@ const IndividualVideoCameraPage = () => {
                       <div>
                         <p className="font-medium">{zone.name}</p>
                         <p className="text-xs text-neutral-400">
-                          {zone.points.length} points
+                          {zone.points?.length || 0} points
                         </p>
                       </div>
                       <div className="flex space-x-2">
-                        <button
-                          className="p-1 text-neutral-400 hover:text-white"
-                          onClick={() => {
-                            /* Edit zone functionality */
-                          }}
-                        >
-                          <FiEdit size={16} />
-                        </button>
                         <button
                           className="p-1 text-neutral-400 hover:text-red-500"
                           onClick={() => deleteZone(zone.id)}

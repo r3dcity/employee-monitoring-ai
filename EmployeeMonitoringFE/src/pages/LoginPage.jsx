@@ -4,8 +4,9 @@ import { Link, useNavigate } from "react-router";
 import axios from "axios";
 import { SERVER_URL } from "../utils/constants";
 import { useState } from "react";
-import { CiUser, CiZoomIn } from "react-icons/ci";
+import { CiUser } from "react-icons/ci";
 import { useUser } from "../context/UserContext";
+import { getErrorMessage } from "../services/MainService";
 
 const LoginPage = () => {
   const [step, setStep] = useState("step1-login");
@@ -13,8 +14,6 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [phoneNumber, setPhoneNumber] = useState("")
-  const [organization, setOrganization] = useState("")
 
   const { login } = useUser()
   const navigate = useNavigate()
@@ -33,17 +32,12 @@ const LoginPage = () => {
     try {
       setLoading(true);
       const res = await axios.post(`${SERVER_URL}/users/login`, {email, password})
-      if(res.status == 200) {
-        const data = res.data;
-        login(data["user"], data["token"])
-        navigate("/dashboard") 
-      } else {
-        setError("Password is not correct.")
-      }
+      login(res.data["user"], res.data["token"])
+      navigate("/dashboard")
     } catch(err) {
       console.error(err);
-      setError("An error occurred. Please try again.");
-    } finally {CiZoomIn
+      setError(getErrorMessage(err, "An error occurred. Please try again."));
+    } finally {
       setLoading(false);
     }
   }
@@ -70,7 +64,7 @@ const LoginPage = () => {
       }
     } catch (err) {
       console.error(err);
-      setError("An error occurred. Please try again.");
+      setError(getErrorMessage(err, "An error occurred. Please try again."));
     } finally {
       setLoading(false);
     }
@@ -85,7 +79,7 @@ const LoginPage = () => {
 
     if(password == "" || password == null) {
       setError("Please enter your password.")
-      return  
+      return
     }
 
     if(confirmedPassword == "" || confirmedPassword == null) {
@@ -95,6 +89,11 @@ const LoginPage = () => {
 
     if(password != confirmedPassword) {
       setError("Passwords do not match.")
+      return
+    }
+
+    if(password.length < 8) {
+      setError("Password must be at least 8 characters long.")
       return
     }
     setPassword(password)
@@ -118,8 +117,6 @@ const LoginPage = () => {
       return
     }
 
-    setPhoneNumber(phoneNumber)
-    setOrganization(organization)
     try {
       setLoading(true)
       const res = await axios.post(`${SERVER_URL}/users/register`, {
@@ -128,19 +125,12 @@ const LoginPage = () => {
         phoneNumber,
         organization
       })
-      console.log("Here")
       if(res.status === 201) {
-        const data = res.data;
         setStep("step3-register")
-      } else if(res.status === 400) {
-       setError(res.data["message"])
-       return; 
-      } else {
-      throw res.data["message"];
       }
     } catch(err) {
       console.error(err)
-      setError("An error occurred. Please try again.")
+      setError(getErrorMessage(err, "An error occurred. Please try again."))
     } finally {
       setLoading(false)
     }
@@ -163,7 +153,7 @@ const LoginPage = () => {
       if(res.status !== 200) {
         throw res.data["message"];
       } else if(res.status === 200) {
-        
+
         const res = await axios.post(`${SERVER_URL}/users/login`, {email, password})
         if(res.status == 200) {
           const data = res.data;
@@ -172,10 +162,10 @@ const LoginPage = () => {
         } else {
           setError("Looks like we couldn't log you in. Try again later..")
         }
-      } 
+      }
     } catch(err) {
       console.error(err)
-      setError("An error occurred. Please try again.")
+      setError(getErrorMessage(err, "An error occurred. Please try again."))
     } finally {
       setLoading(false)
     }

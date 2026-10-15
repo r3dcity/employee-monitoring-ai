@@ -38,7 +38,7 @@ def create_role(current_user):
 
         permissions_created = []
         for name in data["permissions"]:
-            permission = db.query(Permission).filter_by(name=name).first() != None
+            permission = db.query(Permission).filter_by(name=name).first()
             if permission is None:
                 permission = Permission(name=name)
                 db.add(permission)
@@ -66,9 +66,11 @@ def create_permissions(current_user):
         }    
     """
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or "roles" not in data or "permissions" not in data:
+            return {"message": "Roles and permissions are required"}, 400
         db = get_users_db()
-        
+
         roles = []
         for role_name in data["roles"]:
             role = db.query(Role).filter_by(name=role_name).first()

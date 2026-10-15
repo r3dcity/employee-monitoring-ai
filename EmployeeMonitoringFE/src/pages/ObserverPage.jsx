@@ -13,7 +13,7 @@ const ObserverPage = () => {
   const [focusedCamera, setFocusedCamera] = useState(null);
   const { token } = useUser();
   const {cameras, setCameras} = useAppData();
-  
+
   useEffect(() => {
     const fetchCameras = async () => {
       setLoading(true);
@@ -29,7 +29,6 @@ const ObserverPage = () => {
         setLoading(false);
       }
     };
-    console.log(cameras);
     if(token) {
       if(cameras.length === 0) {
         fetchCameras();
@@ -41,7 +40,7 @@ const ObserverPage = () => {
       setError("Authentication token not found. Please log in.");
       setLoading(false);
     }
-  
+
   }, [token]);
 
   const toggleDetails = () => {

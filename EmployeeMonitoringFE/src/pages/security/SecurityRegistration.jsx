@@ -45,8 +45,6 @@ const SecurityRegistration = () => {
         fetchData();
     }, [code]);
 
-    console.log("Fetched Inviter Email:", inviterEmail);
-    console.log("Fetched Organization:", organization);
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
@@ -58,7 +56,6 @@ const SecurityRegistration = () => {
             phoneNumber: phoneInput,
             invitationCode: code
         };
-        console.log("Form Submitted Data:", registrationData);
 
         try {
             const res = await axios.post(`${SERVER_URL}/users/security/register`, registrationData, {

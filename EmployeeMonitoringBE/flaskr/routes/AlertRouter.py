@@ -4,6 +4,7 @@ from flaskr.entities.VideoCamera import VideoCamera
 from flaskr.entities.Zone import Zone
 from flaskr.db import get_tenant_db
 from flaskr.middlewares.PermissionMiddleware import permission_required
+from flaskr.services.storage import resolve_stored_path
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 import os
@@ -27,6 +28,7 @@ def get_alerts(current_user):
         employee_id (int): Filter by employee ID.
         start_time (str): Filter by start timestamp (ISO 8601 format, e.g., 'YYYY-MM-DDTHH:MM:SS').
         end_time (str): Filter by end timestamp (ISO 8601 format, e.g., 'YYYY-MM-DDTHH:MM:SS').
+        limit (int), offset (int): Optional pagination. Alerts are returned newest first.
     Returns:
         JSON response with a list of alerts or an error message.
     """
@@ -84,6 +86,15 @@ def get_alerts(current_user):
                 query = query.filter(Alert.timestamp <= end_time)
             except ValueError:
                 return jsonify({"error": f"Invalid end_time format: {args['end_time']}. Use ISO 8601."}), 400
+
+        query = query.order_by(Alert.timestamp.desc(), Alert.id.desc())
+        try:
+            if 'limit' in args:
+                query = query.limit(max(0, int(args['limit'])))
+            if 'offset' in args:
+                query = query.offset(max(0, int(args['offset'])))
+        except ValueError:
+            return jsonify({"error": "limit and offset must be integers"}), 400
 
         # Execute the query
         results = query.all()
@@ -145,31 +156,10 @@ def get_alert_by_id(current_user, alert_id):
         alert_data['camera_location'] = result[2]
         alert_data['zone_name'] = result[3]
         
-        # Add the base URL for screenshots if a screenshot exists
+        # Screenshots are served by the authenticated endpoint below
         if alert.screenshot:
-            # Create the full URL for the screenshot
-            base_url = request.host_url.rstrip('/')
-            if not alert.screenshot.startswith('http'):
-                # If it's a relative path, create a full URL
-                if alert.screenshot.startswith('/'):
-                    alert_data['screenshot_url'] = f"{base_url}{alert.screenshot}"
-                else:
-                    # Main URL using the correct path structure
-                    alert_data['screenshot_url'] = f"{base_url}/static/{alert.screenshot}"
-                    
-                    # Provide alternate URLs as fallbacks for different possible path formats
-                    alert_data['screenshot_url_alt1'] = f"{base_url}/{alert.screenshot}"
-                    
-                    # Extract filename from path for a direct reference as fallback
-                    filename = alert.screenshot.split('/')[-1] if '/' in alert.screenshot else alert.screenshot
-                    alert_data['screenshot_url_alt2'] = f"{base_url}/static/alert_screenshots/{filename}"
-                    
-                    # For compatibility with older stored paths that might use alerts (plural) instead of alert_screenshots
-                    alert_data['screenshot_url_alt3'] = f"{base_url}/static/alerts/{filename}"
-            else:
-                # If it's already a full URL, use it as is
-                alert_data['screenshot_url'] = alert.screenshot
-        
+            alert_data['screenshot_url'] = f"/alerts/screenshot/{alert.id}"
+
         return jsonify({"alert": alert_data}), 200
         
     except SQLAlchemyError as e:
@@ -200,9 +190,11 @@ def update_alert(current_user, alert_id):
     Returns:
         JSON response with success message or error
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "No data provided"}), 400
     db = get_tenant_db()
-    
+
     try:
         # Find the alert to update
         alert = db.query(Alert).filter(Alert.id == alert_id).first()
@@ -281,12 +273,14 @@ def get_alert_screenshot(current_user, alert_id):
             
         if not alert.screenshot:
             return jsonify({"error": "This alert has no screenshot"}), 404
-        print(f"Screenshot path: {alert.screenshot}")
-        return send_file(alert.screenshot, mimetype='image/jpeg')
+        path = resolve_stored_path(alert.screenshot, "ALERTS_SCREENSHOTS_PATH")
+        if path is None:
+            return jsonify({"error": "Screenshot file not found"}), 404
+        return send_file(path, mimetype='image/jpeg')
         
     except SQLAlchemyError as e:
         app.logger.error(f"Database error retrieving screenshot for alert {alert_id}: {str(e)}")
         return jsonify({"error": "Database error occurred"}), 500
     except Exception as e:
         app.logger.error(f"Unexpected error retrieving screenshot for alert {alert_id}: {str(e)}")
-        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+        return jsonify({"error": "An unexpected error occurred"}), 500

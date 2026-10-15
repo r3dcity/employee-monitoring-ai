@@ -1,16 +1,18 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { useUser } from "../context/UserContext";
 
-const NotFoundPage = ({isAuthenticated}) => {
+const NotFoundPage = () => {
+    const navigate = useNavigate();
+    const { isAuthenticated } = useUser();
+    const loggedIn = isAuthenticated();
 
     useEffect(() => {
-        setTimeout(() => {
-            if(isAuthenticated) {
-                window.location.href = "/login"
-            } else {
-                window.location.href = "/dashboard"
-            }
-        }, 5000)
-    }, [])
+        const timer = setTimeout(() => {
+            navigate(loggedIn ? "/dashboard" : "/login", { replace: true });
+        }, 5000);
+        return () => clearTimeout(timer);
+    }, [loggedIn, navigate]);
 
     return <div
     style={{
@@ -19,7 +21,7 @@ const NotFoundPage = ({isAuthenticated}) => {
         backgroundPosition: "center",
         width: "100vw",
         height: "100vh",
-        
+
     }}
     className="flex items-center justify-center h-screen relative"
 >

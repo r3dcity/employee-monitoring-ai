@@ -45,7 +45,7 @@ const formatTimestamp = (isoString) => {
   if (!isoString) return "N/A";
   try {
     return new Date(isoString).toLocaleString();
-  } catch (e) {
+  } catch {
     return isoString; // Return original if parsing fails
   }
 };
@@ -59,7 +59,7 @@ const DashboardCard = ({
   iconBgColor = "bg-neutral-700",
 }) => (
   <div className={`${bgColor} p-5 rounded-lg shadow-md mb-4`}>
-    
+
     <div className="flex items-center mb-2">
       <div className={`${iconBgColor} p-3 rounded-md mr-4`}>
         {icon}
@@ -93,7 +93,7 @@ const HomePage = () => {
             try {
             const alertDate = new Date(alert.timestamp);
             return alertDate >= sevenDaysAgo;
-            } catch (e) {
+            } catch {
             console.warn("Invalid date format for alert:", alert);
             return false;
             }
@@ -115,7 +115,7 @@ const HomePage = () => {
             try {
                 const alertDate = new Date(alert.timestamp);
                 return alertDate.getDate() === day && (alertDate.getMonth() + 1) === month;
-            } catch (e) {
+            } catch {
                 return false;
             }
             }).length;
@@ -130,7 +130,7 @@ const HomePage = () => {
                 backgroundColor: 'rgba(255, 99, 132, 0.5)',
                 borderColor: 'rgba(255, 99, 132, 1)',
                 borderWidth: 4,
-           
+
                 tension: 0.4
             },
             ],
@@ -181,7 +181,7 @@ const HomePage = () => {
             </div>
           );
         }
-    
+
     const createMostActiveCamsChart = () => {
         let cameraToNoAlerts = {}
         for (let i = 0; i < alerts.length; i++) {
@@ -193,7 +193,7 @@ const HomePage = () => {
                 }
             }
         }
-        
+
         const cameraNames = cameras.reduce((acc, cam) => {
             acc[cam.id] = cam.name || `Camera #${cam.id}`; // Default name if not available
             return acc;
@@ -268,12 +268,12 @@ const HomePage = () => {
       try {
         const alertsResponse = await getAlerts();
         let alerts = alertsResponse.data.alerts;
-        setUnresolvedAlerts(alerts.filter((alert) => alert.status === "active").length); 
+        setUnresolvedAlerts(alerts.filter((alert) => alert.status === "active").length);
         setLatestAlerts(alerts.slice(0, 5));
 
         const camerasResponse = await getCamerasList();
         const cams = camerasResponse.data.cameras || [];
-        const activeCams = cams.filter((cam) => cam.status === "active").length; 
+        const activeCams = cams.filter((cam) => cam.status === "active").length;
         const inactiveCams = cams.length - activeCams;
         setCameraCounts({ active: activeCams, inactive: inactiveCams });
 
@@ -286,7 +286,7 @@ const HomePage = () => {
           setSecurityCount(securityResponse.data.length || 0);
         }
          else {
-          employeesResponse = { data: [] }; 
+          employeesResponse = { data: [] };
           securityResponse = { data: [] };
           setEmployeeCount(0);
           setSecurityCount(0);
@@ -359,11 +359,11 @@ const HomePage = () => {
                 iconBgColor="bg-red-700"
               />
               <DashboardCard
-                icon={<FiVideo className="h-6 w-6 text-white" />} 
+                icon={<FiVideo className="h-6 w-6 text-white" />}
                 title="Camera Status"
                 value={
                   <div className="text-xl text-left">
-                    
+
                     {/* Adjusted text size slightly */}
                     <p>
                       Active:
@@ -397,7 +397,7 @@ const HomePage = () => {
             </div>
             <div className="flex space-x-4">
   {createAlertsTrendChart()}
-  {createMostActiveCamsChart()} 
+  {createMostActiveCamsChart()}
   </div>
             <div className="bg-neutral-800 p-6 rounded-lg shadow-md">
               <h2 className="text-xl font-semibold mb-4 px-4">Latest Alerts</h2>

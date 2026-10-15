@@ -8,7 +8,6 @@ import {
   getAllEmployees,
 } from "../../services/MainService";
 import { FiSave, FiX, FiPlus, FiTrash } from "react-icons/fi";
-import { useUser } from "../../context/UserContext";
 
 const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
   const [description, setDescription] = useState(initialData.description || "");
@@ -25,7 +24,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
   const [conditionsJson, setConditionsJson] = useState(
     typeof initialData.conditions_json === "string"
       ? initialData.conditions_json
-      : JSON.stringify({ logic: "AND", conditions: [] }, null, 2)
+      : JSON.stringify({ logical_operator: "AND", conditions: [] }, null, 2)
   );
   const [fetchError, setFetchError] = useState(null);
 
@@ -66,7 +65,9 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
             ? JSON.parse(initialData.conditions_json)
             : initialData.conditions_json;
 
-        setLogicalOperator(parsedConditions.logic || "AND");
+        setLogicalOperator(
+          parsedConditions.logical_operator || parsedConditions.logic || "AND"
+        );
         setConditions(parsedConditions.conditions || []);
       } catch (e) {
         console.error("Failed to parse initial conditions:", e);
@@ -88,7 +89,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
 
   useEffect(() => {
     const conditionsObject = {
-      logic: logicalOperator,
+      logical_operator: logicalOperator,
       conditions: conditions,
     };
     setConditionsJson(JSON.stringify(conditionsObject, null, 2));
@@ -99,7 +100,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
       ...conditions,
       {
         type: "object_detected",
-        object_name: "person",
+        object_name: "Person",
         count: 1,
         operator: ">",
         dwell_time: 0,
@@ -129,29 +130,26 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
       field === "toggle_employee" &&
       updatedConditions[index].type === "face_recognition"
     ) {
-      // Get current employee_ids array or initialize if it doesn't exist
+      // Toggle the employee in a copy of the condition
       const employeeIds = updatedConditions[index].employee_ids || [];
-
-      if (employeeIds.includes(value)) {
-        // Remove employee if already selected
-        updatedConditions[index].employee_ids = employeeIds.filter(
-          (id) => id !== value
-        );
-      } else {
-        // Add employee if not already selected
-        updatedConditions[index].employee_ids = [...employeeIds, value];
-      }
+      updatedConditions[index] = {
+        ...updatedConditions[index],
+        employee_ids: employeeIds.includes(value)
+          ? employeeIds.filter((id) => id !== value)
+          : [...employeeIds, value],
+      };
     }
     // Handle changing from face recognition to another type
     else if (
       field === "type" &&
       updatedConditions[index].type === "face_recognition"
     ) {
+      // eslint-disable-next-line no-unused-vars
       const { employee_ids, ...rest } = updatedConditions[index];
       updatedConditions[index] = {
         ...rest,
         [field]: value,
-        object_name: "person",
+        object_name: "Person",
       };
     }
     // Regular field update
@@ -212,7 +210,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
   };
 
   const ppeObjectTypes = [
-    { value: "person", label: "Person" },
+    { value: "Person", label: "Person" },
     { value: "Hardhat", label: "Hard Hat" },
     { value: "Gloves", label: "Gloves" },
     { value: "Mask", label: "Mask" },
@@ -470,7 +468,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
                             Object Type
                           </label>
                           <select
-                            value={condition.object_name || "person"}
+                            value={condition.object_name || "Person"}
                             onChange={(e) =>
                               updateCondition(
                                 index,
@@ -562,7 +560,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
                             Object Type
                           </label>
                           <select
-                            value={condition.object_name || "person"}
+                            value={condition.object_name || "Person"}
                             onChange={(e) =>
                               updateCondition(
                                 index,
@@ -754,13 +752,10 @@ const AlertRuleCreatePage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { token } = useUser();
-
   const handleCreateSubmit = async (ruleData) => {
     setLoading(true);
     setError(null);
     setSuccess(false);
-    console.log("Submitting rule data:", ruleData);
 
     if (
       !ruleData.location?.cameras?.length &&

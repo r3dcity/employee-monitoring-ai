@@ -56,7 +56,7 @@ export const App = () => {
       <Routes>
         <Route
           path="*"
-          element={<NotFoundPage isAuthenticated={isAuthenticated()} />}
+          element={<NotFoundPage />}
         />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/security/register" element={<SecurityRegistration />} />

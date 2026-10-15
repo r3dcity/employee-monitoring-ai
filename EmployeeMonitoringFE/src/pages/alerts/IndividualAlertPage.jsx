@@ -5,7 +5,6 @@ import {
   getAlert,
   updateAlert,
   getCamerasList,
-  getAlertScreenshot,
 } from "../../services/MainService";
 import { useUser } from "../../context/UserContext";
 import { SERVER_URL } from "../../utils/constants";
@@ -34,7 +33,7 @@ const formatTimestamp = (isoString) => {
   try {
     const date = new Date(isoString);
     return date.toLocaleString();
-  } catch (e) {
+  } catch {
     return isoString;
   }
 };
@@ -77,6 +76,9 @@ const IndividualAlertPage = () => {
       setScreenshotError(false);
       setScreenshotUrl(null);
 
+      let objectUrl = null;
+      let cancelled = false;
+
       const fetchScreenshot = async () => {
         try {
           const response = await axios.get(
@@ -86,21 +88,24 @@ const IndividualAlertPage = () => {
               responseType: "blob",
             }
           );
-          const url = URL.createObjectURL(response.data);
-          setScreenshotUrl(url);
+          if (cancelled) return;
+          objectUrl = URL.createObjectURL(response.data);
+          setScreenshotUrl(objectUrl);
         } catch (err) {
+          if (cancelled) return;
           console.error("Failed to fetch screenshot:", err);
           setScreenshotError(true);
         } finally {
-          setScreenshotLoading(false);
+          if (!cancelled) setScreenshotLoading(false);
         }
       };
 
       fetchScreenshot();
 
       return () => {
-        if (screenshotUrl) {
-          URL.revokeObjectURL(screenshotUrl);
+        cancelled = true;
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
         }
       };
     } else {
@@ -363,12 +368,12 @@ const IndividualAlertPage = () => {
                     </div>
                     {screenshotUrl && (
                       <>
-                        <div className="absolute bottom-2 right-2 bg-black bg-opacity-70 text-white px-2 py-1 text-xs rounded">
+                        <div className="absolute bottom-2 right-2 bg-black/70 text-white px-2 py-1 text-xs rounded">
                           {formatTimestamp(alert.timestamp)}
                         </div>
                         <button
                           onClick={toggleFullscreen}
-                          className="absolute top-2 right-2 p-2 bg-black bg-opacity-50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute top-2 right-2 p-2 bg-black/50 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity"
                           title="View Fullscreen"
                         >
                           <FiMaximize size={18} />
@@ -450,7 +455,7 @@ const IndividualAlertPage = () => {
 
         {isScreenshotFullscreen && screenshotUrl && (
           <div
-            className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4"
             onClick={toggleFullscreen}
           >
             <button

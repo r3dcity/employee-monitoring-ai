@@ -10,7 +10,7 @@ class EmailCodes(AuthBaseEntity):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column( nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     expires_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now() + timedelta(minutes=5))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
 
