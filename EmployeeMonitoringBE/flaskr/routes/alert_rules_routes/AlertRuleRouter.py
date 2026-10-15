@@ -6,19 +6,79 @@ from flaskr.entities.alert_system.AlertRule import AlertRule, Priority
 from flaskr.entities.alert_system.RuleCameraLink import RuleCameraLink
 from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
 from flaskr.entities.VideoCamera import VideoCamera
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
+from flaskr.entities.Zone import Zone
+import json
 
 bp = Blueprint("alert-rules", __name__, url_prefix="/alert-rules")
 
+PRIORITY_BY_NUMBER = {1: Priority.LOW, 2: Priority.MEDIUM, 3: Priority.HIGH}
+
+
+class RuleValidationError(Exception):
+    pass
+
+
+def parse_priority(value):
+    """Accept 1/2/3 or 'low'/'medium'/'high'; anything else falls back to MEDIUM."""
+    if isinstance(value, int):
+        return PRIORITY_BY_NUMBER.get(value, Priority.MEDIUM)
+    if isinstance(value, str):
+        return Priority.__members__.get(value.upper(), Priority.MEDIUM)
+    return Priority.MEDIUM
+
+
+def normalize_conditions(value):
+    """Validate the rule conditions (sent as a dict or a JSON string) and return them as a JSON string.
+
+    The frontend historically used both "logic" and "logical_operator"; they are stored as
+    "logical_operator".
+    """
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            raise RuleValidationError("conditions_json is not valid JSON")
+    if not isinstance(value, dict) or not isinstance(value.get("conditions"), list):
+        raise RuleValidationError("conditions_json must be an object with a 'conditions' list")
+    if any(not isinstance(c, dict) or "type" not in c for c in value["conditions"]):
+        raise RuleValidationError("Every condition needs a 'type'")
+    operator = str(value.pop("logic", None) or value.get("logical_operator") or "AND").upper()
+    if operator not in ("AND", "OR"):
+        raise RuleValidationError("logical_operator must be AND or OR")
+    value["logical_operator"] = operator
+    return json.dumps(value)
+
+
+def apply_location(db, alert_rule, location):
+    if not isinstance(location, dict):
+        raise RuleValidationError("location must be an object")
+    camera_ids = set(location.get("cameras") or [])
+    zone_ids = set(location.get("zones") or [])
+    found_cameras = {c for (c,) in db.query(VideoCamera.id).filter(VideoCamera.id.in_(camera_ids))} if camera_ids else set()
+    found_zones = {z for (z,) in db.query(Zone.id).filter(Zone.id.in_(zone_ids))} if zone_ids else set()
+    if camera_ids - found_cameras:
+        raise RuleValidationError(f"Unknown cameras: {sorted(camera_ids - found_cameras)}")
+    if zone_ids - found_zones:
+        raise RuleValidationError(f"Unknown zones: {sorted(zone_ids - found_zones)}")
+
+    alert_rule.camera_links.clear()
+    alert_rule.zone_links.clear()
+    for camera_id in camera_ids:
+        alert_rule.camera_links.append(RuleCameraLink(camera_id=camera_id))
+    for zone_id in zone_ids:
+        alert_rule.zone_links.append(RuleZoneLink(zone_id=zone_id))
+
+
 """
-conditions_json: 
+conditions_json:
 {
     "logic": "AND",
     "conditions": [
     {
         "object_name": "Excavator",
-        "dwell_time": 10, 
-        "min_count": 1, 
+        "dwell_time": 10,
+        "min_count": 1,
         "action": {
             "notification": "email",
             "message": "Excavator detected",
@@ -30,7 +90,7 @@ conditions_json:
     },
     {
         "object_name": "face_recognition",
-        "dwell_time": 10, 
+        "dwell_time": 10,
         "employees": [1, 2, 3]  // at least one
         "action": {
             "notification": "sms",
@@ -66,68 +126,35 @@ def create_alert_rule(current_user):
     Returns:
         JSON response with the created alert rule or an error message.
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "No data provided"}), 400
+    if "conditions_json" not in data:
+        return jsonify({"error": "conditions_json is required"}), 400
     db = get_tenant_db()
-    
+
     try:
-        # Convert priority string to correct enum value
-        priority_str = data.get("priority")
-        try:
-            if isinstance(priority_str, int):
-                # If priority is sent as numeric value (1, 2, 3)
-                if priority_str == 1:
-                    priority = Priority.LOW
-                elif priority_str == 2:
-                    priority = Priority.MEDIUM
-                elif priority_str == 3:
-                    priority = Priority.HIGH
-                else:
-                    priority = Priority.MEDIUM  # Default
-            elif isinstance(priority_str, str):
-                # If priority is sent as string ('low', 'medium', 'high')
-                priority_upper = priority_str.upper()
-                if priority_upper == 'LOW':
-                    priority = Priority.LOW
-                elif priority_upper == 'MEDIUM':
-                    priority = Priority.MEDIUM
-                elif priority_upper == 'HIGH':
-                    priority = Priority.HIGH
-                else:
-                    priority = Priority.MEDIUM  # Default
-            else:
-                priority = Priority.MEDIUM  # Default if not specified or invalid
-        except (ValueError, TypeError):
-            priority = Priority.MEDIUM  # Default if conversion fails
-            
         alert_rule = AlertRule(
             description=data.get("description"),
-            is_active=data.get("is_active", False),
-            priority=priority,
-            conditions_json=data["conditions_json"],
-            cooldown_seconds=data.get("cooldown_seconds", 0),  # Default to 0 if not provided
+            is_active=bool(data.get("is_active", False)),
+            priority=parse_priority(data.get("priority")),
+            conditions_json=normalize_conditions(data["conditions_json"]),
+            cooldown_seconds=int(data.get("cooldown_seconds") or 0),
         )
-        location = data.get("location", {})
-        for camera_id in location.get("cameras", []):
-            rule_camera_link = RuleCameraLink(
-                camera_id=camera_id
-            )
-            alert_rule.camera_links.append(rule_camera_link)
-
-        for zone_id in location.get("zones", []):
-            rule_zone_link = RuleZoneLink(
-                zone_id=zone_id
-            )
-            alert_rule.zone_links.append(rule_zone_link)
+        apply_location(db, alert_rule, data.get("location") or {})
 
         db.add(alert_rule)
         db.commit()
 
         return jsonify({"message": "Alert rule created successfully", "alert_rule_id": alert_rule.id}), 201
 
+    except (RuleValidationError, ValueError, TypeError) as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 400
     except SQLAlchemyError as e:
         db.rollback()
         app.logger.error(f"Error creating alert rule: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Database error occurred"}), 500
 
 @bp.route("/", methods=["GET"])
 @permission_required("READ_ALERT_RULES")
@@ -140,12 +167,14 @@ def get_alert_rules(current_user):
     db = get_tenant_db()
 
     try:
-        alert_rules = db.query(AlertRule).all()
+        alert_rules = db.query(AlertRule).options(
+            selectinload(AlertRule.camera_links), selectinload(AlertRule.zone_links)
+        ).all()
         return jsonify([alert_rule.to_dict() for alert_rule in alert_rules]), 200
 
     except SQLAlchemyError as e:
         app.logger.error(f"Error fetching alert rules: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Database error occurred"}), 500
 
 @bp.route("/<int:rule_id>", methods=["PUT"])
 @permission_required("UPDATE_ALERT_RULES")
@@ -166,72 +195,39 @@ def update_alert_rule(current_user, rule_id):
     Returns:
         JSON response confirming update or error.
     """
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "No data provided"}), 400
     db = get_tenant_db()
 
     try:
-        alert_rule = db.query(AlertRule).filter(AlertRule.id == rule_id).first()
+        alert_rule = db.get(AlertRule, rule_id)
         if not alert_rule:
             return jsonify({"error": "Alert rule not found"}), 404
 
         if "description" in data:
             alert_rule.description = data["description"]
         if "is_active" in data:
-            alert_rule.is_active = data["is_active"]
+            alert_rule.is_active = bool(data["is_active"])
         if "cooldown_seconds" in data:
-            alert_rule.cooldown_seconds = data["cooldown_seconds"]
+            alert_rule.cooldown_seconds = int(data["cooldown_seconds"] or 0)
         if "priority" in data:
-            priority_str = data["priority"]
-            try:
-                if isinstance(priority_str, int):
-                    # If priority is sent as numeric value (1, 2, 3)
-                    if priority_str == 1:
-                        priority = Priority.LOW
-                    elif priority_str == 2:
-                        priority = Priority.MEDIUM
-                    elif priority_str == 3:
-                        priority = Priority.HIGH
-                    else:
-                        priority = Priority.MEDIUM  # Default
-                elif isinstance(priority_str, str):
-                    # If priority is sent as string ('low', 'medium', 'high')
-                    priority_upper = priority_str.upper()
-                    if priority_upper == 'LOW':
-                        priority = Priority.LOW
-                    elif priority_upper == 'MEDIUM':
-                        priority = Priority.MEDIUM
-                    elif priority_upper == 'HIGH':
-                        priority = Priority.HIGH
-                    else:
-                        priority = Priority.MEDIUM  # Default
-                else:
-                    priority = Priority.MEDIUM  # Default if not specified or invalid
-                
-                alert_rule.priority = priority
-            except (ValueError, TypeError):
-                # Keep existing priority if conversion fails
-                pass
+            alert_rule.priority = parse_priority(data["priority"])
         if "conditions_json" in data:
-            alert_rule.conditions_json = data["conditions_json"]
-
+            alert_rule.conditions_json = normalize_conditions(data["conditions_json"])
         if "location" in data:
-            location = data["location"]
-            alert_rule.camera_links.clear()
-            alert_rule.zone_links.clear()
-            for camera_id in location.get("cameras", []):
-                rule_camera_link = RuleCameraLink(camera_id=camera_id)
-                alert_rule.camera_links.append(rule_camera_link)
-            for zone_id in location.get("zones", []):
-                rule_zone_link = RuleZoneLink(zone_id=zone_id)
-                alert_rule.zone_links.append(rule_zone_link)
+            apply_location(db, alert_rule, data["location"])
 
         db.commit()
         return jsonify({"message": "Alert rule updated successfully"}), 200
 
+    except (RuleValidationError, ValueError, TypeError) as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 400
     except SQLAlchemyError as e:
         db.rollback()
         app.logger.error(f"Error updating alert rule {rule_id}: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Database error occurred"}), 500
     except Exception as e:
         db.rollback()
         app.logger.error(f"Unexpected error updating alert rule {rule_id}: {str(e)}")
@@ -258,7 +254,7 @@ def delete_alert_rule(current_user, rule_id):
     except SQLAlchemyError as e:
         db.rollback()
         app.logger.error(f"Error deleting alert rule {rule_id}: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Database error occurred"}), 500
     except Exception as e:
         db.rollback()
         app.logger.error(f"Unexpected error deleting alert rule {rule_id}: {str(e)}")
@@ -290,7 +286,7 @@ def get_alert_rules_for_camera(current_user, camera_id):
 
     except SQLAlchemyError as e:
         app.logger.error(f"Error fetching alert rules for camera {camera_id}: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Database error occurred"}), 500
     except AttributeError:
         app.logger.error(f"AlertRule entity likely missing a 'to_dict' method.")
         rules_list_manual = []

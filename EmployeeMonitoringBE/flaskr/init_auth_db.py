@@ -1,99 +1,41 @@
-from flaskr.db import get_users_db, setup_users_db
+import os
 
+import click
+
+from flaskr.db import get_users_db
 from flaskr.entities.auth_db.Role import Role
 from flaskr.entities.auth_db.User import User
-from flaskr.entities.auth_db.RolePermission import RolePermission
-from flaskr.entities.auth_db.Permission import Permission
-from flaskr.entities.auth_db.RoleUser import RoleUser
-from flaskr.services.AuthService import hash_password
 from flaskr.entities.auth_db.Tenant import Tenant
+from flaskr.services.AuthService import hash_password
+from flaskr.seed import seed_roles_and_permissions
 
-def init_auth_db(app):
-    setup_users_db(app)
-    print("Database initialized")
+
+@click.command("seed")
+@click.option("--admin-email", default=lambda: os.getenv("SEED_ADMIN_EMAIL"), help="Optional first admin account")
+@click.option("--admin-password", default=lambda: os.getenv("SEED_ADMIN_PASSWORD"))
+@click.option("--organization", default=lambda: os.getenv("SEED_ORGANIZATION", "Default organization"))
+def seed_command(admin_email, admin_password, organization):
+    """Seed roles and permissions, and optionally a verified admin user.
+
+    Usage: flask --app flaskr seed [--admin-email ... --admin-password ...]
+    """
     db = get_users_db()
-    admin_role = Role(name="ADMIN")
-    db.add(admin_role)
-    security_guard_role = Role(name="SECURITY")
-    db.add(security_guard_role)
+    seed_roles_and_permissions(db)
+    click.echo("Roles and permissions are up to date.")
 
-    manage_alerts_permission = Permission(name="MANAGE_ALERTS")
-    db.add(manage_alerts_permission)
-    read_alerts_permission = Permission(name="READ_ALERTS")
-    db.add(read_alerts_permission)
-    manage_alerts_rules_permission = Permission(name="MANAGE_ALERT_RULES")
-    db.add(manage_alerts_rules_permission)
-    read_alert_rule_permission = Permission(name="READ_ALERT_RULES")
-    db.add(read_alert_rule_permission)
-    create_alert_rule_permission = Permission(name="CREATE_ALERT_RULES")
-    db.add(create_alert_rule_permission)
-    update_alert_rule_permission = Permission(name="UPDATE_ALERT_RULES")
-    db.add(update_alert_rule_permission)
-    delete_alert_rule_permission = Permission(name="DELETE_ALERT_RULES")
-    db.add(delete_alert_rule_permission)
+    if not admin_email:
+        return
+    if not admin_password:
+        raise click.UsageError("--admin-password is required together with --admin-email")
+    if db.query(User).filter_by(email=admin_email).first():
+        click.echo(f"User {admin_email} already exists.")
+        return
 
-    get_alerts_permission = Permission(name="GET_ALERTS")
-    db.add(get_alerts_permission)
-    create_blacklist_permission = Permission(name="CREATE_BLACKLIST")
-    db.add(create_blacklist_permission)
-    delete_blacklist_permission = Permission(name="DELETE_BLACKLIST")
-    db.add(delete_blacklist_permission)
-
-    create_employee_permission = Permission(name="CREATE_EMPLOYEE")
-    db.add(create_employee_permission)
-    delete_employee_permission = Permission(name="DELETE_EMPLOYEE")
-    db.add(delete_employee_permission)
-
-    create_tenant_permission = Permission(name="CREATE_TENANT")
-    db.add(create_tenant_permission)
-    create_video_camera_permission = Permission(name="CREATE_VIDEO_CAMERA")
-    db.add(create_video_camera_permission)
-    read_video_camera_permission = Permission(name="READ_VIDEO_CAMERA")
-    db.add(read_video_camera_permission)
-
-    get_persons_detected = Permission(name="GET_PERSONS_DETECTED")
-    db.add(get_persons_detected)
-
-    read_video_stream = Permission(name="READ_VIDEO_STREAM")
-    db.add(read_video_stream)
-
-    create_zone_permission = Permission(name="CREATE_ZONE")
-    db.add(create_zone_permission)
-    delete_zone_permission = Permission(name="DELETE_ZONE")
-    db.add(delete_zone_permission)
-
-    db.flush()
-    db.add(RolePermission(role_id=admin_role.id, permission_id=manage_alerts_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=read_alerts_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=manage_alerts_rules_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=read_alert_rule_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=create_alert_rule_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=update_alert_rule_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=delete_alert_rule_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=get_alerts_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=create_blacklist_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=delete_blacklist_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=create_employee_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=delete_employee_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=get_persons_detected.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=read_video_stream.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=create_zone_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=delete_zone_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=create_video_camera_permission.id))
-    db.add(RolePermission(role_id=admin_role.id, permission_id=read_video_camera_permission.id))
-
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=read_alert_rule_permission.id))
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=read_alerts_permission.id))
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=get_alerts_permission.id))
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=get_persons_detected.id))
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=read_video_stream.id))
-    db.add(RolePermission(role_id=security_guard_role.id, permission_id=read_video_camera_permission.id))
-
-    tenant = Tenant(name="ASE")
+    tenant = db.query(Tenant).filter_by(name=organization).first() or Tenant(name=organization)
     db.add(tenant)
     db.flush()
-    super_admin = User(email="robertflorianp037@gmail.com", password=hash_password("admin"), phoneNumber="0728922213", is_verified=True, tenant_id=tenant.id)
-    super_admin.roles.append(admin_role)
-    db.add(super_admin)
+    admin = User(email=admin_email, password=hash_password(admin_password), is_verified=True, tenant_id=tenant.id)
+    admin.roles.append(db.query(Role).filter_by(name="ADMIN").one())
+    db.add(admin)
     db.commit()
-    print("Done")
+    click.echo(f"Created admin {admin_email} in organization '{organization}'.")

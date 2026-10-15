@@ -23,7 +23,7 @@ class AlertRule(Entity):
     cooldown_seconds: Mapped[int] = mapped_column(default=0)  # Default: no cooldown
 
     conditions_json: Mapped[str] = mapped_column(nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     camera_links: Mapped[List["RuleCameraLink"]] = relationship(cascade="all, delete-orphan")
     zone_links: Mapped[List["RuleZoneLink"]] = relationship(cascade="all, delete-orphan")

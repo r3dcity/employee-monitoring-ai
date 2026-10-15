@@ -1,19 +1,16 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
-from flask_socketio import SocketIO
 from dotenv import load_dotenv
 import os
 
-socketio = SocketIO(cors_allowed_origins="*")
-
 
 def create_app(test_config=None):
-    app = Flask(__name__, instance_relative_config=True)
-    
-    # Update CORS configuration to properly handle preflight requests
+    # static_folder=None: uploads (faces, screenshots) are only served through authenticated routes
+    app = Flask(__name__, instance_relative_config=True, static_folder=None)
+
     # Specify the frontend origin explicitly and allow credentials
-    cors = CORS(
-        app, 
+    CORS(
+        app,
         resources={r"/*": {
             "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
             "supports_credentials": True,
@@ -22,20 +19,25 @@ def create_app(test_config=None):
         }},
         expose_headers=["Content-Type", "Authorization"]
     )
-    
+
     load_dotenv()
+    static_dir = os.path.join(app.root_path, "static")
     app.config.from_mapping(
-        DATABASE_URL = os.getenv("DATABASE_URL"),
-        SECRET_KEY = os.getenv("SECRET_KEY"),
-        JWT_SECRET = os.getenv("JWT_SECRET"),
-        GENERAL_DATABASE_URL = os.getenv("GENERAL_DATABASE_URL"),
-        USERS_DATABASE_URL = os.getenv("USERS_DATABASE_URL"),
-        ALERTS_SCREENSHOTS_PATH = os.path.join(app.root_path, 'static\\alert_screenshots'),
-        PROFILE_PICTURES_PATH = os.path.join(app.root_path, 'static\\profile_pictures'),
-        MASK_ZONES_PATH = os.path.join(app.root_path, 'static\\mask_zones'),
-        PPE_PICTURES_PATH = os.path.join(app.root_path, 'static\\ppe_pictures'),
-        ALLOWED_EXTENSIONS = ['png', 'jpg', 'jpeg']
+        SECRET_KEY=os.getenv("SECRET_KEY"),
+        JWT_SECRET=os.getenv("JWT_SECRET"),
+        JWT_EXPIRES_MINUTES=int(os.getenv("JWT_EXPIRES_MINUTES", 60 * 8)),
+        GENERAL_DATABASE_URL=os.getenv("GENERAL_DATABASE_URL"),
+        USERS_DATABASE_URL=os.getenv("USERS_DATABASE_URL"),
+        ALERTS_SCREENSHOTS_PATH=os.path.join(static_dir, "alert_screenshots"),
+        PROFILE_PICTURES_PATH=os.path.join(static_dir, "profile_pictures"),
+        MASK_ZONES_PATH=os.path.join(static_dir, "mask_zones"),
+        PPE_PICTURES_PATH=os.path.join(static_dir, "ppe_pictures"),
+        PPE_MODEL_PATH=os.path.join(app.root_path, "ML", "PPE_model", "my_model.pt"),
+        ALLOWED_EXTENSIONS=["png", "jpg", "jpeg"],
+        MAX_CONTENT_LENGTH=10 * 1024 * 1024,
     )
+    if test_config is not None:
+        app.config.from_mapping(test_config)
 
     from flaskr.db import init_app
     init_app(app)
@@ -43,19 +45,17 @@ def create_app(test_config=None):
     from flaskr.routes import register_blueprints
     register_blueprints(app)
 
-    # from flaskr.init_auth_db import init_auth_db
-    # with app.app_context():
-        
-    #     init_auth_db(app)
+    from flaskr.init_auth_db import seed_command
+    app.cli.add_command(seed_command)
 
-    # # Add a before_request function to handle OPTIONS requests
+    @app.errorhandler(413)
+    def file_too_large(e):
+        return jsonify({"message": "Uploaded file is too large"}), 413
+
     @app.before_request
     def handle_preflight():
         from flask import request
         if request.method == "OPTIONS":
             return "", 200
-    return app
 
-if __name__ == "__main__":
-    app = create_app()
-    socketio.run(app, debug=True, threaded=True)
+    return app

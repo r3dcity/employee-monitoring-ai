@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from flask import g, current_app
 from flaskr.db import get_tenant_db
+from flaskr.services.storage import tenant_dir, relative_to_base
 from flaskr.entities.Alert import Alert, AlertStatus # Assuming AlertStatus is in Alert.py
 
 class AlertManager:
@@ -116,12 +117,12 @@ class AlertManager:
                 try:
                     success, jpeg_frame = cv.imencode('.jpg', frame)
                     if success:
-                        full_screenshot_path = os.path.join(current_app.config['ALERTS_SCREENSHOTS_PATH'], f"alert_{alert_id}.jpg")
-                        os.makedirs(current_app.config["ALERTS_SCREENSHOTS_PATH"], exist_ok=True) 
+                        full_screenshot_path = tenant_dir("ALERTS_SCREENSHOTS_PATH") / f"alert_{alert_id}.jpg"
                         with open(full_screenshot_path, 'wb') as f:
                             f.write(jpeg_frame.tobytes())
-                        
-                        alert.screenshot = full_screenshot_path
+
+                        # Stored relative to ALERTS_SCREENSHOTS_PATH, e.g. "<tenant_id>/alert_12.jpg"
+                        alert.screenshot = relative_to_base(full_screenshot_path, "ALERTS_SCREENSHOTS_PATH")
                         print(f"Screenshot saved at: {full_screenshot_path}")
                     else:
                         print(f"Failed to encode screenshot for alert ID {alert_id}.")

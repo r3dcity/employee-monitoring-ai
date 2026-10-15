@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app as app
 from flaskr.db import get_users_db
 from flaskr.entities.auth_db.Tenant import Tenant
 from flaskr.entities.auth_db.User import User
@@ -10,15 +10,19 @@ bp = Blueprint("tenant", __name__, url_prefix="/tenant")
 @bp.route("/", methods=["POST"])
 @permission_required("CREATE_TENANT")
 def create_tenant(current_user):
+    db = get_users_db()
     try:
-        data = request.get_json()
-        db = get_users_db()
+        data = request.get_json(silent=True)
 
         if data == None:
             return jsonify({"message": "No data provided"}), 400
         if "name" not in data:
             return jsonify({"message": "Name is required"}), 400
         
+        user = db.get(User, current_user.id)
+        if user.tenant_id is not None:
+            return {"message": "User already has a tenant"}, 400
+
         name = data.get("name")
         tenant = db.query(Tenant).filter_by(name=name).first()
         if tenant:
@@ -31,16 +35,12 @@ def create_tenant(current_user):
 
         setup_tenant_db(tenant.id)
 
-        # Conectam user-ul de db de abia dupa ce am creat db-ul ( tenant_ul )
-        # tinand cont ca putem crea un user fara tenant
-        user = db.query(User).filter_by(id=current_user.id).first()
-        if user.tenant_id != None:
-            return {"message": "User already has a tenant"}, 400
+        # Link the user only after the tenant database exists
         user.tenant_id = tenant.id
-        db.merge(user)
         current_user.tenant_id = tenant.id
         db.commit()
         return jsonify({"message": "Tenant created", "tenant_id": tenant.id}), 201
     except Exception as e:
-        print(e)
+        db.rollback()
+        app.logger.error(e)
         return jsonify({"message": "Something went wrong"}), 500

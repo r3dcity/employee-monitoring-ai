@@ -3,25 +3,26 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import os
 import base64
+import logging
 
 class EmailService:
     def __init__(self):
-        try:
-            self.session = smtplib.SMTP('smtp.gmail.com', 587)
-            self.session.starttls()
-            self.sender = os.getenv("SENDER_EMAIL")
-            self.sender_password = os.getenv("SENDER_PASSWORD")
-            self.session.login(self.sender, self.sender_password)
-            print("Login sucessfuly into server mail.")
-        except Exception as e:
-            print(e)
+        self.sender = os.getenv("SENDER_EMAIL")
+        self.sender_password = os.getenv("SENDER_PASSWORD")
+
+    def _send(self, to, message):
+        """Open a fresh SMTP connection per email so a dropped connection never breaks sending."""
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as session:
+            session.starttls()
+            session.login(self.sender, self.sender_password)
+            session.sendmail(self.sender, to, message.as_string())
 
     def get_base64_encoded_image(self, image_path):
         try:
             with open(image_path, "rb") as img_file:
                 return base64.b64encode(img_file.read()).decode('utf-8')
         except Exception as e:
-            print(f"Error reading logo: {e}")
+            logging.getLogger(__name__).warning("Error reading logo: %s", e)
             return ""
 
     def send_code_verification(self, to, code):
@@ -66,10 +67,11 @@ class EmailService:
         
         message.attach(MIMEText(message_body_html, 'html'))
         try:
-            self.session.sendmail(self.sender, to, message.as_string())
-            print("Email sent sucessfuly")
+            self._send(to, message)
+            return True
         except Exception as e:
-            print("Error after sending:", e)
+            logging.getLogger(__name__).error("Could not send verification email to %s: %s", to, e)
+            return False
 
 emailService = None
 def get_email_service():
