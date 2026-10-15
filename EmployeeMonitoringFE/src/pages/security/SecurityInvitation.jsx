@@ -1,4 +1,3 @@
-import Sidebar from "../../components/layout/Sidebar";
 import { useState } from "react";
 import { FiCopy, FiCheck } from "react-icons/fi";
 import { postSecurityInvitation, getErrorMessage } from "../../services/MainService";
@@ -32,8 +31,7 @@ const SecurityInvitation = () => {
     };
 
     return (
-        <div className="flex h-screen bg-neutral-900 text-white">
-            <Sidebar/>
+        <div className="flex h-full bg-neutral-900 text-white">
             <div className="flex flex-col items-center justify-center flex-1">
                 <div className="bg-neutral-800 rounded-lg shadow-lg p-8 w-full max-w-2xl flex flex-col items-center">
                     <div className="mb-4 text-center">

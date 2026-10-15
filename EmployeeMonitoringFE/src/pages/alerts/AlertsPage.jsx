@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState } from "react";
 import { Link } from "react-router";
-import Sidebar from "../../components/layout/Sidebar";
-import { getAlerts } from "../../services/MainService";
-import { useUser } from "../../context/UserContext";
+import { getAlertsSummary, getErrorMessage } from "../../services/MainService";
+import { useAlerts } from "../../services/queries";
 import {
   FiAlertTriangle,
   FiCheckCircle,
@@ -13,93 +12,36 @@ import {
 } from "react-icons/fi";
 
 const AlertsPage = () => {
-  const [allAlerts, setAllAlerts] = useState([]);
-  const [filteredAlerts, setFilteredAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // Kept up to date by live events (new alerts invalidate the query)
+  const { data: allAlerts = [], isLoading: loading, error: loadError, refetch } = useAlerts();
+  const error = loadError ? "Failed to load alerts. Please try again later." : null;
   const [filterStatus, setFilterStatus] = useState("all");
-  const [summary, setSummary] = useState(""); // State for the summary
-  const [summaryLoading, setSummaryLoading] = useState(false); // Loading state for summary
-  const [summaryError, setSummaryError] = useState(null); // Error state for summary
-  const { token } = useUser();
+  const [summary, setSummary] = useState("");
+  const [summarySource, setSummarySource] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState(null);
 
+  const filteredAlerts = useMemo(
+    () => (filterStatus === "all" ? allAlerts : allAlerts.filter((alert) => alert.status === filterStatus)),
+    [allAlerts, filterStatus]
+  );
 
+  // The server aggregates the alerts and (if configured) asks an LLM to describe the numbers
   const generateSummary = async () => {
     setSummaryLoading(true);
     setSummaryError(null);
-    setSummary(""); // Clear previous summary
-
-    const OLLAMA_API_URL = "http://localhost:11434/api/generate"; // Default Ollama API endpoint
-    const MODEL_NAME = "openhermes:latest"; // Or your chosen small model
-
-    const prompt = `Summarize the provided security alert JSON data. Output a text-only bulleted list in a simple text format without MD elements covering:
-- Overall Status: Total, Active, Resolved counts.
-- Key Trends: Common alert types and locations.
-- Priority Items: Mention any high-priority active alerts.
-- Quick Stats: Include relevant numbers.
-Keep it brief and informative and made for untechnical persons.:\n\n${JSON.stringify(filteredAlerts)}}`;
-
+    setSummary("");
     try {
-      const response = await fetch(OLLAMA_API_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: MODEL_NAME,
-          prompt: prompt,
-          stream: false, // Get the full response at once
-        }),
+      const { data } = await getAlertsSummary({
+        days: 7,
+        status: filterStatus === "all" ? undefined : filterStatus,
       });
-
-      if (!response.ok) {
-        throw new Error(`Ollama API request failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      let processedResponse = data.response || "";
-      processedResponse = processedResponse.replace(/<think>.*?<\/think>/gs, "");
-
-      setSummary(processedResponse.trim() || "No summary could be generated.");
+      setSummary(data.summary);
+      setSummarySource(data.source);
     } catch (err) {
-      console.error("Failed to generate summary:", err);
-      setSummaryError(
-        `Failed to connect to Ollama or generate summary. Make sure Ollama is running. (${err.message})`
-      );
+      setSummaryError(getErrorMessage(err, "Could not generate a summary."));
     } finally {
       setSummaryLoading(false);
-    }
-  };
-
-  // Fetch all alerts only on mount or token change
-  useEffect(() => {
-    fetchAlerts();
-  }, [token]);
-
-  // Filter alerts whenever allAlerts or filterStatus changes
-  useEffect(() => {
-    if (filterStatus === "all") {
-      setFilteredAlerts(allAlerts);
-    } else {
-      setFilteredAlerts(
-        allAlerts.filter((alert) => alert.status === filterStatus)
-      );
-    }
-  }, [allAlerts, filterStatus]);
-
-  const fetchAlerts = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Always fetch all alerts, remove status param
-      const response = await getAlerts();
-      setAllAlerts(response.data.alerts || []);
-    } catch (err) {
-      console.error("Failed to fetch alerts:", err);
-      setError("Failed to load alerts. Please try again later.");
-      setAllAlerts([]); // Reset all alerts on error
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -157,13 +99,12 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
   );
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-semibold">Security Alerts</h1>
           <button
-            onClick={fetchAlerts}
+            onClick={() => refetch()}
             className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2 px-4 rounded inline-flex items-center transition-colors duration-200"
           >
             <FiRefreshCw className="mr-2" />
@@ -320,7 +261,7 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
 <div className="mt-6 p-4 bg-neutral-800 rounded-lg">
   <button
     onClick={generateSummary}
-    disabled={summaryLoading || filteredAlerts.length === 0}
+    disabled={summaryLoading}
     className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded inline-flex items-center transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed mb-3"
   >
     {summaryLoading ? "Generating..." : "Generate Summary"}
@@ -335,12 +276,14 @@ Keep it brief and informative and made for untechnical persons.:\n\n${JSON.strin
   )}
   {summary && !summaryLoading && !summaryError && (
     <div className="text-neutral-200 whitespace-pre-wrap">
-      <h3 className="font-semibold mb-1">Summary:</h3>
+      <h3 className="font-semibold mb-1">
+        Last 7 days{summarySource === "llm" ? " (AI summary)" : ""}:
+      </h3>
       {summary}
     </div>
   )}
    {!summary && !summaryLoading && !summaryError && filteredAlerts.length > 0 && (
-     <div className="text-neutral-500 text-sm italic">Click "Generate Summary" to get an AI overview of the filtered alerts.</div>
+     <div className="text-neutral-500 text-sm italic">Click "Generate Summary" for a plain-language overview of the last 7 days.</div>
    )}
    {!summary && !summaryLoading && !summaryError && filteredAlerts.length === 0 && (
      <div className="text-neutral-500 text-sm italic">No alerts selected to summarize.</div>

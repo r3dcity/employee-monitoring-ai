@@ -83,6 +83,10 @@ export const getAlert = (alertId) => {
   return apiClient.get(`/alerts/${alertId}`);
 };
 
+export const getAlertsSummary = ({ days = 7, status } = {}) => {
+  return apiClient.post("/alerts/summary", { days, status });
+};
+
 export const updateAlert = (alertId, alertData) => {
   return apiClient.put(`/alerts/${alertId}`, alertData);
 };

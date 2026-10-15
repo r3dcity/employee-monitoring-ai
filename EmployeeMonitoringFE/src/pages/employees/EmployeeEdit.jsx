@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import Sidebar from "../../components/layout/Sidebar";
 import { getEmployee, updateEmployee } from '../../services/MainService';
 import { useUser } from '../../context/UserContext';
 import { SERVER_URL } from '../../utils/constants';
@@ -31,7 +30,7 @@ const EmployeeEdit = () => {
             try {
                 const response = await getEmployee(employeeId);
                 const employee = response.data;
-                
+
                 setFormData({
                     firstName: employee.firstName || '',
                     lastName: employee.lastName || '',
@@ -39,12 +38,12 @@ const EmployeeEdit = () => {
                     department: employee.department || '',
                     role: employee.role || ''
                 });
-                
+
                 if (employee.profilePicture) {
                     setCurrentPhotoUrl(`${SERVER_URL}/employees/${employeeId}/profile-picture`);
                     setPreviewUrl(`${SERVER_URL}/employees/${employeeId}/profile-picture`);
                 }
-                
+
             } catch (err) {
                 console.error("Failed to fetch employee:", err);
                 setError("Failed to load employee data. Please try again later.");
@@ -85,30 +84,30 @@ const EmployeeEdit = () => {
         e.preventDefault();
         setSaving(true);
         setError(null);
-        
+
         try {
             // Create FormData object to send file and form data
             const submitData = new FormData();
-            
+
             // Add all text fields
             Object.keys(formData).forEach(key => {
                 submitData.append(key, formData[key]);
             });
-            
+
             // Add the photo only if a new one was selected
             if (photo) {
                 submitData.append('profile-picture', photo);
             }
-            
+
             // Send the update request
             await updateEmployee(employeeId, submitData);
-            
+
             // Redirect to employees list on success
             navigate('/employees');
         } catch (err) {
             console.error("Failed to update employee:", err);
             setError(
-                err.response?.data?.message || 
+                err.response?.data?.message ||
                 "Failed to update employee. Please check your inputs and try again."
             );
         } finally {
@@ -117,8 +116,7 @@ const EmployeeEdit = () => {
     };
 
     return (
-        <div className="flex h-screen bg-neutral-900 text-white">
-            <Sidebar />
+        <div className="flex h-full bg-neutral-900 text-white">
             <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6  overflow-y-auto">
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-3xl font-semibold">Edit Employee</h1>
@@ -147,14 +145,14 @@ const EmployeeEdit = () => {
                             <div className="flex flex-col items-center justify-center mb-6">
                                 <div className="w-32 h-32 rounded-full overflow-hidden bg-neutral-700 flex items-center justify-center mb-4">
                                     {previewUrl && !photo ? (
-                                        <AuthenticatedImage 
-                                            employeeId={employeeId} 
-                                            alt={`${formData.firstName} ${formData.lastName}`} 
+                                        <AuthenticatedImage
+                                            employeeId={employeeId}
+                                            alt={`${formData.firstName} ${formData.lastName}`}
                                         />
                                     ) : previewUrl ? (
-                                        <img 
-                                            src={previewUrl} 
-                                            alt="Employee preview" 
+                                        <img
+                                            src={previewUrl}
+                                            alt="Employee preview"
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
@@ -183,7 +181,7 @@ const EmployeeEdit = () => {
                                 {/* Personal Info */}
                                 <div>
                                     <h3 className="text-xl font-semibold mb-4">Personal Information</h3>
-                                    
+
                                     <div className="space-y-4">
                                         <div>
                                             <label className="block text-sm font-medium mb-1">First Name *</label>
@@ -196,7 +194,7 @@ const EmployeeEdit = () => {
                                                 className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                             />
                                         </div>
-                                        
+
                                         <div>
                                             <label className="block text-sm font-medium mb-1">Last Name *</label>
                                             <input
@@ -208,7 +206,7 @@ const EmployeeEdit = () => {
                                                 className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                             />
                                         </div>
-                                        
+
                                         <div>
                                             <label className="block text-sm font-medium mb-1">Phone Number *</label>
                                             <input
@@ -222,11 +220,11 @@ const EmployeeEdit = () => {
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 {/* Employment Info */}
                                 <div>
                                     <h3 className="text-xl font-semibold mb-4">Employment Information</h3>
-                                    
+
                                     <div className="space-y-4">
                                         <div>
                                             <label className="block text-sm font-medium mb-1">Department *</label>
@@ -239,7 +237,7 @@ const EmployeeEdit = () => {
                                                 className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                             />
                                         </div>
-                                        
+
                                         <div>
                                             <label className="block text-sm font-medium mb-1">Role *</label>
                                             <input
@@ -254,7 +252,7 @@ const EmployeeEdit = () => {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Submit Button */}
                             <div className="flex justify-end">
                                 <button

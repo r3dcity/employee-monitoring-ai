@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
-import Sidebar from "../../components/layout/Sidebar";
 import { createVideoCamera } from '../../services/MainService';
 import { FiSave, FiX } from 'react-icons/fi';
 
@@ -36,11 +35,11 @@ const VideoCamerasRegisterPage = () => {
         try {
             // Validate form data
             const { name, ip, port, username, password } = formData;
-            
+
             if (!name || !ip || !port || !username || !password) {
                 throw new Error("Please fill all required fields.");
             }
-            
+
             // Convert port to number
             const portNumber = parseInt(port, 10);
             if (isNaN(portNumber) || portNumber < 1 || portNumber > 65535) {
@@ -77,8 +76,7 @@ const VideoCamerasRegisterPage = () => {
     };
 
     return (
-        <div className="flex h-screen bg-neutral-900 text-white">
-            <Sidebar />
+        <div className="flex h-full bg-neutral-900 text-white">
             <main className="flex-1 p-6 md:p-8 lg:p-10 overflow-y-auto">
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-3xl font-semibold">Register New Camera</h1>
@@ -259,7 +257,7 @@ const VideoCamerasRegisterPage = () => {
                         </div>
                     </form>
                 </div>
-                
+
                 {/* Info Box */}
                 <div className="mt-6 bg-neutral-800 rounded-lg shadow-md p-6 border-l-4 border-cyan-500">
                     <h3 className="text-lg font-semibold mb-2">Camera Information</h3>

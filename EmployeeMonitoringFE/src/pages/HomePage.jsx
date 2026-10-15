@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useMemo } from "react";
 import { Link } from "react-router"; // Updated import
-import Sidebar from "../components/layout/Sidebar";
 import {
   FiAlertTriangle,
   FiVideo,
@@ -9,12 +8,7 @@ import {
   FiEye,
   FiArrowRightCircle,
 } from "react-icons/fi";
-import {
-  getAlerts,
-  getCamerasList,
-  getAllEmployees,
-  getAllSecurity,
-} from "../services/MainService";
+import { useAlerts, useCameras, useEmployees, useSecurityGuards } from "../services/queries";
 import { useUser } from "../context/UserContext";
 import { Bar, Line } from 'react-chartjs-2'; // Importing BarChart from react-chartjs-2
 import {
@@ -28,7 +22,6 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { useAppData } from "../context/AppDataContext";
 
 ChartJS.register(
   CategoryScale,
@@ -73,15 +66,25 @@ const DashboardCard = ({
 );
 
 const HomePage = () => {
-  const [unresolvedAlerts, setUnresolvedAlerts] = useState(0);
-  const [cameraCounts, setCameraCounts] = useState({ active: 0, inactive: 0 });
-  const [employeeCount, setEmployeeCount] = useState(0);
-  const [securityCount, setSecurityCount] = useState(0);
-  const [latestAlerts, setLatestAlerts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const { isAdmin } = useUser();
-  const {alerts, cameras, loadAllAppData } = useAppData();
+  const admin = isAdmin();
+  const alertsQuery = useAlerts();
+  const camerasQuery = useCameras();
+  const employeesQuery = useEmployees(admin);
+  const securityQuery = useSecurityGuards(admin);
+  const alerts = useMemo(() => alertsQuery.data || [], [alertsQuery.data]);
+  const cameras = useMemo(() => camerasQuery.data || [], [camerasQuery.data]);
+
+  const loading = alertsQuery.isLoading || camerasQuery.isLoading;
+  const error = alertsQuery.error || camerasQuery.error
+    ? "Failed to load dashboard data. Please try again later."
+    : null;
+  const unresolvedAlerts = alerts.filter((alert) => alert.status === "active").length;
+  const latestAlerts = alerts.slice(0, 5); // the API returns the newest first
+  const activeCameras = cameras.filter((cam) => cam.status === "active").length;
+  const cameraCounts = { active: activeCameras, inactive: cameras.length - activeCameras };
+  const employeeCount = admin ? (employeesQuery.data || []).length : 0;
+  const securityCount = admin ? (securityQuery.data || []).length : 0;
 
     const createAlertsTrendChart = () => {
         const sevenDaysAgo = new Date();
@@ -261,54 +264,6 @@ const HomePage = () => {
     }
 
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null); // Reset error on new load
-      try {
-        const alertsResponse = await getAlerts();
-        let alerts = alertsResponse.data.alerts;
-        setUnresolvedAlerts(alerts.filter((alert) => alert.status === "active").length);
-        setLatestAlerts(alerts.slice(0, 5));
-
-        const camerasResponse = await getCamerasList();
-        const cams = camerasResponse.data.cameras || [];
-        const activeCams = cams.filter((cam) => cam.status === "active").length;
-        const inactiveCams = cams.length - activeCams;
-        setCameraCounts({ active: activeCams, inactive: inactiveCams });
-
-        let employeesResponse = null;
-        let securityResponse = null;
-        if (isAdmin()) {
-             employeesResponse = await getAllEmployees();
-          setEmployeeCount(employeesResponse.data.length || 0);
-          securityResponse = await getAllSecurity();
-          setSecurityCount(securityResponse.data.length || 0);
-        }
-         else {
-          employeesResponse = { data: [] };
-          securityResponse = { data: [] };
-          setEmployeeCount(0);
-          setSecurityCount(0);
-        }
-        loadAllAppData(cams, alerts, employeesResponse.data, securityResponse.data);
-      } catch (err) {
-        console.error("Failed to fetch dashboard data:", err);
-        setError("Failed to load dashboard data. Please try again later.");
-        // Set default/empty states on error?
-        setUnresolvedAlerts(0);
-        setCameraCounts({ active: 0, inactive: 0 });
-        setEmployeeCount(0);
-        setSecurityCount(0);
-        setLatestAlerts([]);
-        loadAllAppData([], [], [], []);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-
   const formatLocation = (alert) => {
     if (alert.camera_name && alert.zone_name) {
       return `${alert.camera_name} / ${alert.zone_name}`;
@@ -328,8 +283,7 @@ const HomePage = () => {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6 overflow-auto">
         <h1 className="text-3xl font-semibold mb-8">Dashboard Overview</h1>
 

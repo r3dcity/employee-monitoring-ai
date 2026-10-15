@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import Sidebar from "../../components/layout/Sidebar";
 import {
   createAlertRule,
   getCamerasList,
@@ -102,7 +101,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
         type: "object_detected",
         object_name: "Person",
         count: 1,
-        operator: ">",
+        operator: ">=",
         dwell_time: 0,
       },
     ]);
@@ -499,7 +498,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
                             Operator
                           </label>
                           <select
-                            value={condition.operator || ">"}
+                            value={condition.operator || ">="}
                             onChange={(e) =>
                               updateCondition(index, "operator", e.target.value)
                             }
@@ -594,7 +593,7 @@ const AlertRuleForm = ({ onSubmit, navigate, initialData = {}, loading }) => {
                                 Operator
                               </label>
                               <select
-                                value={condition.operator || ">"}
+                                value={condition.operator || ">="}
                                 onChange={(e) =>
                                   updateCondition(
                                     index,
@@ -784,8 +783,7 @@ const AlertRuleCreatePage = () => {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 overflow-y-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-semibold">Create New Alert Rule</h1>

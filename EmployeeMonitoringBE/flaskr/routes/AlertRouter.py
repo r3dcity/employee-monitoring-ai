@@ -5,6 +5,7 @@ from flaskr.entities.Zone import Zone
 from flaskr.db import get_tenant_db
 from flaskr.middlewares.PermissionMiddleware import permission_required
 from flaskr.services.storage import resolve_stored_path
+from flaskr.services.alert_summary import summarize_alerts
 from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -283,3 +284,16 @@ def get_alert_screenshot(current_user, alert_id):
     except Exception as e:
         app.logger.error(f"Unexpected error retrieving screenshot for alert {alert_id}: {str(e)}")
         return jsonify({"error": "An unexpected error occurred"}), 500
+
+
+@bp.route("/summary", methods=["POST"])
+@permission_required("GET_ALERTS")
+def alerts_summary(current_user):
+    """Plain-language summary of the last days' alerts. Body: {"days": 7, "status": "active"}"""
+    data = request.get_json(silent=True) or {}
+    try:
+        days = min(max(int(data.get("days", 7)), 1), 365)
+        status = data.get("status") if data.get("status") in ("active", "resolved") else None
+    except (TypeError, ValueError):
+        return jsonify({"error": "days must be a number"}), 400
+    return jsonify(summarize_alerts(get_tenant_db(), app.config, days=days, status=status)), 200

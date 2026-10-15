@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
-import Sidebar from "../../components/layout/Sidebar";
 import { registerEmployee } from '../../services/MainService';
 import { FiUser, FiUpload, FiSave } from 'react-icons/fi';
 
@@ -43,7 +42,7 @@ const EmployeeRegistration = () => {
         e.preventDefault();
         setLoading(true);
         setError(null);
-        
+
         try {
             // Create FormData object to send file and form data
             const submitData = new FormData();
@@ -51,7 +50,7 @@ const EmployeeRegistration = () => {
             Object.keys(formData).forEach(key => {
                 submitData.append(key, formData[key]);
             });
-            
+
             // Add the photo - it's mandatory
             if (photo) {
                 submitData.append('profile-picture', photo);
@@ -60,16 +59,16 @@ const EmployeeRegistration = () => {
                 setLoading(false);
                 return;
             }
-            
+
             // Send the registration request
             await registerEmployee(submitData);
-            
+
             // Redirect to employees list on success
             navigate('/employees');
         } catch (err) {
             console.error("Failed to register employee:", err);
             setError(
-                err.response?.data?.message || 
+                err.response?.data?.message ||
                 "Failed to register employee. Please check your inputs and try again."
             );
         } finally {
@@ -78,8 +77,7 @@ const EmployeeRegistration = () => {
     };
 
     return (
-        <div className="flex h-screen bg-neutral-900 text-white">
-            <Sidebar />
+        <div className="flex h-full bg-neutral-900 text-white">
             <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6 overflow-y-auto">
                 <div className="flex justify-between items-center mb-8">
                     <h1 className="text-3xl font-semibold">Register New Employee</h1>
@@ -99,9 +97,9 @@ const EmployeeRegistration = () => {
                         <div className="flex flex-col items-center justify-center mb-6">
                             <div className="w-32 h-32 rounded-full overflow-hidden bg-neutral-700 flex items-center justify-center mb-4">
                                 {previewUrl ? (
-                                    <img 
-                                        src={previewUrl} 
-                                        alt="Employee preview" 
+                                    <img
+                                        src={previewUrl}
+                                        alt="Employee preview"
                                         className="w-full h-full object-cover"
                                     />
                                 ) : (
@@ -126,7 +124,7 @@ const EmployeeRegistration = () => {
                             {/* Personal Info */}
                             <div>
                                 <h3 className="text-xl font-semibold mb-4">Personal Information</h3>
-                                
+
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium mb-1">First Name *</label>
@@ -139,7 +137,7 @@ const EmployeeRegistration = () => {
                                             className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium mb-1">Last Name *</label>
                                         <input
@@ -151,7 +149,7 @@ const EmployeeRegistration = () => {
                                             className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium mb-1">Phone Number *</label>
                                         <input
@@ -165,11 +163,11 @@ const EmployeeRegistration = () => {
                                     </div>
                                 </div>
                             </div>
-                            
+
                             {/* Employment Info */}
                             <div>
                                 <h3 className="text-xl font-semibold mb-4">Employment Information</h3>
-                                
+
                                 <div className="space-y-4">
                                     <div>
                                         <label className="block text-sm font-medium mb-1">Department *</label>
@@ -182,7 +180,7 @@ const EmployeeRegistration = () => {
                                             className="w-full bg-neutral-700 border border-neutral-600 rounded-md px-3 py-2 text-white"
                                         />
                                     </div>
-                                    
+
                                     <div>
                                         <label className="block text-sm font-medium mb-1">Role *</label>
                                         <input
@@ -197,7 +195,7 @@ const EmployeeRegistration = () => {
                                 </div>
                             </div>
                         </div>
-                        
+
                         {/* Submit Button */}
                         <div className="flex justify-end">
                             <button

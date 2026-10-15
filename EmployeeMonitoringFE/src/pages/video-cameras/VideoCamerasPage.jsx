@@ -1,53 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Link, useNavigate } from 'react-router';
-import Sidebar from "../../components/layout/Sidebar";
-import { useUser } from '../../context/UserContext';
-import { getCamerasList } from '../../services/MainService';
 import { FiPlus, FiRefreshCw } from 'react-icons/fi';
 import VideoCameraFeed from '../../components/video/VideoCameraFeed';
+import { useCameras } from '../../services/queries';
 
 const VideoCamerasPage = () => {
-    const [cameras, setCameras] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [refreshing, setRefreshing] = useState(false);
-    const { token } = useUser();
+    const { data: cameras = [], isLoading: loading, isFetching: refreshing, error, refetch } = useCameras();
     const navigate = useNavigate();
-
-    const fetchCameras = async () => {
-        setRefreshing(true);
-        try {
-            const response = await getCamerasList();
-            setCameras(response.data.cameras || []);
-            setError(null);
-        } catch (err) {
-            console.error("Failed to fetch cameras:", err);
-            setError("Failed to load camera list. Please try again later.");
-            setCameras([]);
-        } finally {
-            setRefreshing(false);
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (token) {
-            fetchCameras();
-        }
-    }, [token]);
 
     const handleCameraClick = (camera) => {
         navigate(`/video-cameras/${camera.id}`);
     };
 
-    const handleRefresh = () => {
-        setRefreshing(true);
-        fetchCameras();
-    };
+    const handleRefresh = () => refetch();
 
     return (
-        <div className="flex h-screen bg-neutral-900 text-white">
-            <Sidebar />
+        <div className="flex h-full bg-neutral-900 text-white">
             <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6 overflow-y-auto">
                 {/* Header and Add Button */}
                 <div className="flex justify-between items-center mb-8">
@@ -62,7 +30,7 @@ const VideoCamerasPage = () => {
                         </Link>
                         <button
                             onClick={handleRefresh}
-                            className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded inline-flex items-center transition-colors duration-200"
+                            className="bg-neutral-600 hover:bg-neutral-500 text-white font-bold py-2 px-4 rounded inline-flex items-center transition-colors duration-200"
                         >
                             <FiRefreshCw className={`mr-2 ${refreshing ? 'animate-spin' : ''}`} />
                             Refresh
@@ -79,7 +47,7 @@ const VideoCamerasPage = () => {
                 ) : error ? (
                     <div className="bg-red-800 border border-red-600 text-red-100 px-4 py-3 rounded relative mb-6" role="alert">
                         <strong className="font-bold">Error:</strong>
-                        <span className="block sm:inline"> {error}</span>
+                        <span className="block sm:inline"> Failed to load camera list. Please try again later.</span>
                     </div>
                 /* No Cameras Found */
                 ) : cameras.length === 0 ? (

@@ -57,6 +57,9 @@ def create_app(test_config=None):
         MEDIAMTX_WEBRTC_URL=os.getenv("MEDIAMTX_WEBRTC_URL", "/media"),
         MEDIA_INTERNAL_USER=os.getenv("MEDIA_INTERNAL_USER", "emonitoring"),
         MEDIA_INTERNAL_PASSWORD=os.getenv("MEDIA_INTERNAL_PASSWORD"),
+        # Optional LLM for alert summaries (an Ollama server)
+        OLLAMA_URL=os.getenv("OLLAMA_URL"),
+        OLLAMA_MODEL=os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
     )
     if test_config is not None:
         app.config.from_mapping(test_config)
