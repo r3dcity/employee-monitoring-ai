@@ -1,0 +1,31 @@
+# MediaMTX relay: pulls each camera once (paths are added by the API through the control API)
+# and serves it to the detection workers (RTSP) and to browsers (WebRTC/WHEP).
+logLevel: info
+
+# Every read is authorized by the API: workers use the internal user, browsers a stream ticket
+authMethod: http
+authHTTPAddress: http://api:5000/internal/media-auth
+authHTTPExclude:
+  - action: api        # control API: only reachable inside the compose network
+  - action: metrics
+
+api: yes
+apiAddress: :9997
+
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp]
+
+webrtc: yes
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+# Address the browser uses to reach the media ports (published by docker compose)
+webrtcAdditionalHosts: [127.0.0.1, localhost]
+
+hls: no
+rtmp: no
+srt: no
+
+paths:
+  all_others:

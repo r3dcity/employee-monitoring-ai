@@ -77,28 +77,48 @@ def test_camera_list_does_not_expose_password(app, client, make_user):
     assert "password" not in cameras[0]
 
 
-def test_camera_status_is_scoped_per_tenant(app, client, make_user):
-    from flaskr.routes import VideoCameraRouter
-
+def test_camera_status_is_scoped_per_tenant(app, client, make_user, monkeypatch):
     _, tenant_a, headers_a = make_user("admin-a@example.com")
     _, tenant_b, headers_b = make_user("admin-b@example.com")
     add_tenant_rows(app, tenant_a, camera("Main camera"))
     add_tenant_rows(app, tenant_b, camera("Main camera"))
 
-    # Tenant A is streaming its "Main camera"; tenant B's camera with the same name is not
-    key = VideoCameraRouter.stream_key(tenant_a, "Main camera")
-    VideoCameraRouter.active_cameras[key] = {"running": True, "filters": [], "generation": 1}
-    try:
-        status_a = client.get("/video-cameras/", headers=headers_a).get_json()["cameras"][0]["status"]
-        status_b = client.get("/video-cameras/", headers=headers_b).get_json()["cameras"][0]["status"]
-    finally:
-        VideoCameraRouter.active_cameras.pop(key)
+    # Tenant A's camera 1 is live; tenant B's camera 1 (same id and name) is not
+    supervisor = app.extensions["streams"]
+    monkeypatch.setattr(supervisor, "status", lambda tenant_id, camera_id: {
+        "status": "live" if str(tenant_id) == str(tenant_a) else "offline", "error": None})
+    status_a = client.get("/video-cameras/", headers=headers_a).get_json()["cameras"][0]["status"]
+    status_b = client.get("/video-cameras/", headers=headers_b).get_json()["cameras"][0]["status"]
     assert (status_a, status_b) == ("active", "inactive")
 
 
-def test_stream_requires_valid_token(client):
-    assert client.get("/video-cameras/Gate/stream").status_code == 401
-    assert client.get("/video-cameras/Gate/stream?token=garbage").status_code == 401
+def test_stream_requires_a_ticket_for_that_camera(app, client, make_user):
+    _, tenant_id, headers = make_user("admin@example.com")
+    add_tenant_rows(app, tenant_id, camera("Gate"), camera("Yard"))
+    assert client.get("/video-cameras/1/stream.mjpeg").status_code == 401
+    assert client.get("/video-cameras/1/stream.mjpeg?ticket=garbage").status_code == 401
+
+    playback = client.get("/video-cameras/2/playback", headers=headers).get_json()
+    ticket = playback["mjpeg"].split("ticket=")[1]
+    assert client.get(f"/video-cameras/1/stream.mjpeg?ticket={ticket}").status_code == 403
+    # A ticket cannot be used as a session token
+    assert client.get("/employees/", headers={"Authorization": f"Bearer {ticket}"}).status_code == 401
+
+
+def test_camera_crud_validates_and_starts_worker(app, client, make_user):
+    _, tenant_id, headers = make_user("admin@example.com")
+    body = {"ip": "10.0.0.9", "port": "554", "username": "admin", "password": "p@ss", "name": "Dock",
+            "location": "North", "stream_path": "/Streaming/Channels/101"}
+    assert client.post("/video-cameras/", headers=headers, json={**body, "port": "99999"}).status_code == 400
+    assert client.post("/video-cameras/", headers=headers, json={**body, "ip": "not a host!"}).status_code == 400
+    created = client.post("/video-cameras/", headers=headers, json=body)
+    assert created.status_code == 201
+    assert created.get_json()["camera"]["stream_status"] in ("starting", "connecting", "offline")
+
+    updated = client.put("/video-cameras/1", headers=headers, json={"location": "South"})
+    assert updated.get_json()["camera"]["location"] == "South"
+    assert client.delete("/video-cameras/1", headers=headers).status_code == 200
+    assert app.extensions["streams"].status(tenant_id, 1)["status"] == "stopped"
 
 
 def test_alerts_are_newest_first_and_paginated(app, client, make_user):
@@ -142,14 +162,18 @@ def test_zone_delete_cleans_up_references(app, client, make_user):
     assert client.delete("/zone/", headers=headers, json={"zone_id": 1}).status_code == 404
 
 
-def test_zone_create_on_inactive_camera_is_409(app, client, make_user):
+def test_zone_can_be_drawn_while_camera_is_offline(app, client, make_user):
     _, tenant_id, headers = make_user("admin@example.com")
     add_tenant_rows(app, tenant_id, camera())
     response = client.post("/zone/", headers=headers, json={
-        "zone_name": "Door", "camera_id": 1, "camera_name": "Gate",
+        "zone_name": "Door", "camera_id": 1,
         "points": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}],
     })
-    assert response.status_code == 409
+    assert response.status_code == 201
+    assert response.get_json()["zone"]["points"][2] == {"x": 1.0, "y": 1.0}
+    bad = client.post("/zone/", headers=headers, json={
+        "zone_name": "Out", "camera_id": 1, "points": [{"x": 0, "y": 0}, {"x": 2, "y": 0}, {"x": 1, "y": 1}]})
+    assert bad.status_code == 400
 
 
 def test_zone_list_filters_by_camera(app, client, make_user):

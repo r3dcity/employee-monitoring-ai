@@ -1,4 +1,6 @@
 from flask import Blueprint, current_app as app, request
+from flaskr.services.streaming import streams
+from flask import g
 from flaskr.middlewares.PermissionMiddleware import permission_required
 from flaskr.db import get_tenant_db
 from flaskr.entities.Employee import Employee
@@ -62,6 +64,8 @@ def create_blacklist(current_user):
         if new_blacklist_entries:
             db.bulk_save_objects(new_blacklist_entries)
             db.commit()
+            # Camera workers reload their rules, faces and blacklists
+            streams().notify_changed(g.tenant_id)
 
         return {"message": "Blacklist created successfully"}, 201
 
@@ -95,6 +99,8 @@ def delete_blacklist(current_user):
 
         db.query(Blacklist).filter(Blacklist.employee_id.in_(correct_employee_ids), Blacklist.zone_id == zone_id).delete(synchronize_session=False)
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
 
         return {"message": "Blacklist deleted successfully"}, 200
     except Exception as e:

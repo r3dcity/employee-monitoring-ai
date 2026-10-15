@@ -1,4 +1,6 @@
 import io
+from flaskr.services.streaming import streams
+from flask import g
 import mimetypes
 import os
 
@@ -96,6 +98,8 @@ def create_employee(current_user):
             return jsonify({"message": f"Could not use this picture: {e}"}), 400
 
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
 
         return {"message": "Employee created successfully. Face encoded successfully.",
                 "employee": employee_to_dict(employee)}, 201
@@ -168,6 +172,8 @@ def update_employee(current_user, employee_id):
                 remove_picture(old_picture)
 
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
 
         return jsonify({
             "message": "Employee updated successfully",
@@ -194,6 +200,8 @@ def delete_employee(current_user, employee_id):
         # Alerts and detections keep their history; their employee reference is cleared
         db.delete(employee)
         db.commit()
+        # Camera workers reload their rules, faces and blacklists
+        streams().notify_changed(g.tenant_id)
         remove_picture(picture)
         return jsonify({"message": "Employee deleted"}), 200
     except Exception as e:
