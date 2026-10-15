@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router";
-import Sidebar from "../../components/layout/Sidebar";
 import {
   getCamera,
   getAlertRulesForCamera,
@@ -269,8 +268,7 @@ const IndividualVideoCameraPage = () => {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6  overflow-y-auto">
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center">

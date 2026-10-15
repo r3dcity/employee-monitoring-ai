@@ -1,16 +1,17 @@
 import { createRoot } from "react-dom/client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import "./style/main.css";
 import { UserProvider } from "./context/UserContext.jsx";
 import { App } from "./App.jsx";
-import { AppDataProvider } from "./context/AppDataContext.jsx";
 import { LiveEventsProvider } from "./context/LiveEventsContext.jsx";
+import { queryClient } from "./services/queries.js";
 
 createRoot(document.getElementById("root")).render(
-  <UserProvider>
-    <LiveEventsProvider>
-      <AppDataProvider>
+  <QueryClientProvider client={queryClient}>
+    <UserProvider>
+      <LiveEventsProvider>
         <App />
-      </AppDataProvider>
-    </LiveEventsProvider>
-  </UserProvider>
+      </LiveEventsProvider>
+    </UserProvider>
+  </QueryClientProvider>
 );

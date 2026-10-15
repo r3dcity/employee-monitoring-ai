@@ -16,8 +16,10 @@ import {
   FiSliders, // Import icon for rules
 } from "react-icons/fi";
 import Logo from "../../assets/logo/Logo_Vision.webp";
-import { Link, useLocation } from "react-router"; // Import useLocation and ensure Link is from
+import { Link, useLocation, useNavigate } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useUser } from "../../context/UserContext";
+import { useAlerts } from "../../services/queries";
 
 const navItems = [
   {
@@ -69,6 +71,9 @@ const Sidebar = () => {
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const { logout, user } = useUser(); // Get user object which should contain the role
   const location = useLocation(); // Get current location
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { data: activeAlerts = [] } = useAlerts({ status: "active" });
 
   useEffect(() => {
     const handleResize = () => {
@@ -93,6 +98,9 @@ const Sidebar = () => {
   const handleLogout = () => {
     setIsOptionsOpen(false);
     logout();
+    // Do not show the previous user's data to the next one
+    queryClient.clear();
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -116,7 +124,7 @@ const Sidebar = () => {
           )}
           <button
             onClick={toggleSidebar}
-            className="text-white p-1 rounded hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
+            className="text-white p-1 rounded hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-white"
             aria-label={isOpen ? "Collapse sidebar" : "Expand sidebar"}
           >
             {isOpen ? (
@@ -144,10 +152,20 @@ const Sidebar = () => {
                   <Link
                     to={item.path}
                     className={`flex items-center p-3 rounded-md mx-2 transition-colors duration-200 ${
-                      isActive ? "bg-gray-700" : "hover:bg-gray-700"
+                      isActive ? "bg-neutral-700" : "hover:bg-neutral-700"
                     } ${!isOpen ? "justify-center" : ""}`}
                   >
-                    <span className="flex-shrink-0">{item.icon}</span>
+                    <span className="flex-shrink-0 relative">
+                      {item.icon}
+                      {item.path === "/alerts" && activeAlerts.length > 0 && (
+                        <span
+                          className="absolute -top-2 -right-3 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-1 flex items-center justify-center"
+                          title={`${activeAlerts.length} active alerts`}
+                        >
+                          {activeAlerts.length > 99 ? "99+" : activeAlerts.length}
+                        </span>
+                      )}
+                    </span>
                     <span
                       className={`ml-3 transition-opacity duration-200 ${
                         isOpen
@@ -165,10 +183,10 @@ const Sidebar = () => {
         </nav>
 
         {/* Options Button Container - Added relative positioning */}
-        <div className="relative p-2 border-t border-gray-700">
+        <div className="relative p-2 border-t border-neutral-700">
           <button
             onClick={toggleOptions}
-            className={`w-full flex items-center p-3 rounded-md hover:bg-gray-700 transition-colors duration-200 cursor-pointer ${
+            className={`w-full flex items-center p-3 rounded-md hover:bg-neutral-700 transition-colors duration-200 cursor-pointer ${
               !isOpen ? "justify-center" : ""
             }`} // Added cursor-pointer
           >
@@ -188,14 +206,14 @@ const Sidebar = () => {
             <div
               className={`absolute bottom-full left-2 mb-2 ${
                 isOpen ? "w-56" : "w-48"
-              } bg-white rounded-lg shadow-xl z-50 p-2`} // Adjusted positioning and width
+              } bg-neutral-700 rounded-lg shadow-xl z-50 p-2`} // Adjusted positioning and width
               onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside
             >
               {/* Settings Link */}
               <Link
                 to="/settings" // Added path for settings
                 onClick={toggleOptions} // Close menu on click
-                className="w-full flex items-center px-3 py-2 text-sm text-gray-700 rounded hover:bg-gray-100"
+                className="w-full flex items-center px-3 py-2 text-sm text-neutral-100 rounded hover:bg-neutral-600"
               >
                 <FiSettings size={16} className="mr-2" />
                 Settings
@@ -203,7 +221,7 @@ const Sidebar = () => {
               {/* Logout Button */}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center px-3 py-2 mt-1 text-sm text-red-600 rounded hover:bg-red-50 cursor-pointer"
+                className="w-full flex items-center px-3 py-2 mt-1 text-sm text-red-400 rounded hover:bg-neutral-600 cursor-pointer"
               >
                 <FiLogOut size={16} className="mr-2" />
                 Logout

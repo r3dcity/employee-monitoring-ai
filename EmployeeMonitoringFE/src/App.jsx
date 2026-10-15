@@ -22,14 +22,11 @@ import IndividualAlertPage from "./pages/alerts/IndividualAlertPage.jsx";
 import VideoCamerasPage from "./pages/video-cameras/VideoCamerasPage.jsx";
 import VideoCamerasRegisterPage from "./pages/video-cameras/VideoCamerasRegisterPage.jsx";
 import IndividualVideoCameraPage from "./pages/video-cameras/IndividualVideoCameraPage.jsx";
-import ZonesPage from "./pages/video-cameras/zones/ZonesPage.jsx";
-import IndividualZonePage from "./pages/video-cameras/zones/IndividualZonePage.jsx";
-import ZoneRegistration from "./pages/video-cameras/zones/ZoneRegsistration.jsx";
 import SettingsPage from "./pages/settings/SettingsPage.jsx";
 import SecurityInvitation from "./pages/security/SecurityInvitation.jsx";
-import SecurityEdit from "./pages/security/SecurityEdit.jsx";
 import AlertRulesPage from "./pages/rules/AlertRulesPage.jsx";
 import AlertRuleCreatePage from "./pages/rules/AlertRuleCreatePage.jsx";
+import AppLayout from "./components/layout/AppLayout.jsx";
 
 export const App = () => {
   const { isAuthenticated, loading, isAdmin } = useUser();
@@ -71,6 +68,7 @@ export const App = () => {
             <LoginRequiredComponent isAuthenticated={isAuthenticated()} />
           }
         >
+          <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<HomePage />} />
 
@@ -90,10 +88,6 @@ export const App = () => {
               path="/security/invitation"
               element={<SecurityInvitation />}
             />
-            <Route
-              path="/security/:securityId/edit"
-              element={<SecurityEdit />}
-            />
           </Route>
 
           <Route path="/alerts" element={<AlertsPage />} />
@@ -108,18 +102,6 @@ export const App = () => {
             path="/video-cameras/:cameraId"
             element={<IndividualVideoCameraPage />}
           />
-          <Route
-            path="/video-cameras/:cameraId/zones"
-            element={<ZonesPage />}
-          />
-          <Route
-            path="/video-cameras/:cameraId/zones/:zoneId"
-            element={<IndividualZonePage />}
-          />
-          <Route
-            path="/video-cameras/:cameraId/zones/register"
-            element={<ZoneRegistration />}
-          />
 
           <Route path="/settings" element={<SettingsPage />} />
 
@@ -132,6 +114,7 @@ export const App = () => {
           </Route>
 
           <Route path="/observer" element={<ObserverPage />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

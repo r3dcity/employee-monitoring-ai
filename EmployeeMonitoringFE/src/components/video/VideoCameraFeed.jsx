@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { FiMapPin, FiServer, FiWifi } from "react-icons/fi";
 import CameraPlayer from "./CameraPlayer";
+import { useInView } from "../../hooks/useInView";
 
 /**
  * Component for displaying a video camera feed with status indicators
@@ -15,7 +16,8 @@ const VideoCameraFeed = ({
   onClickHandler,
 }) => {
   const [playerStatus, setPlayerStatus] = useState("loading");
-  const isLive = playerStatus === "live";
+  const [visibleRef, inView] = useInView();
+  const isLive = inView && playerStatus === "live";
 
   return (
     <div
@@ -39,8 +41,12 @@ const VideoCameraFeed = ({
       </div>
 
       {/* Camera Feed */}
-      <div className="mt-2 mx-2 border border-black">
-        <CameraPlayer camera={camera} onStatusChange={setPlayerStatus} />
+      <div className="mt-2 mx-2 border border-black" ref={visibleRef}>
+        {inView ? (
+          <CameraPlayer camera={camera} onStatusChange={setPlayerStatus} />
+        ) : (
+          <div className="aspect-video bg-black" />
+        )}
       </div>
 
       {/* Camera Info */}

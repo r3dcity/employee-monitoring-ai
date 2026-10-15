@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router";
-import Sidebar from "../../components/layout/Sidebar";
 import { useUser } from "../../context/UserContext";
 import { FiPlus, FiShield, FiEdit, FiTrash, FiX } from "react-icons/fi";
 import { getAllSecurity, deleteSecurity } from "../../services/MainService";
@@ -113,8 +112,7 @@ const SecurityList = () => {
   );
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 md:pt-6 lg:pt-6  overflow-y-auto">
         {/* Header and Add Button */}
         <div className="flex justify-between items-center mb-8">

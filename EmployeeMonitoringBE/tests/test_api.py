@@ -188,3 +188,45 @@ def test_zone_list_filters_by_camera(app, client, make_user):
     assert [z["name"] for z in zones] == ["Door"]
     assert zones[0]["points"][1] == {"x": 0.5, "y": 0.1}
     assert len(client.get("/zone/", headers=headers).get_json()["zones"]) == 2
+
+
+def test_alert_summary_without_llm_uses_statistics(app, client, make_user):
+    _, tenant_id, headers = make_user("admin@example.com")
+    now = datetime.now()
+    add_tenant_rows(app, tenant_id, camera(), *[
+        Alert(type=AlertType.NO_HELMET_DETECTED, level=AlertLevel.HIGH, status=AlertStatus.ACTIVE,
+              explanation="helmet", timestamp=now, camera_id=1) for _ in range(3)
+    ], Alert(type=AlertType.PERSON_DETECTED, level=AlertLevel.LOW, status=AlertStatus.RESOLVED,
+             explanation="old", timestamp=now - timedelta(days=30)))
+
+    result = client.post("/alerts/summary", headers=headers, json={"days": 7}).get_json()
+    assert result["source"] == "stats"
+    assert result["stats"]["total"] == 3 and result["stats"]["active"] == 3
+    assert result["stats"]["top_places"] == {"Gate": 3}
+    assert "3 alerts" in result["summary"] and "high priority" in result["summary"]
+
+
+def test_alert_summary_sends_only_statistics_to_the_llm(app, client, make_user, monkeypatch):
+    from flaskr.services import alert_summary
+
+    _, tenant_id, headers = make_user("admin@example.com")
+    add_tenant_rows(app, tenant_id, Alert(type=AlertType.NO_MASK_DETECTED, level=AlertLevel.MEDIUM,
+                                          status=AlertStatus.ACTIVE, explanation="secret details",
+                                          timestamp=datetime.now()))
+    app.config.update(OLLAMA_URL="http://ollama:11434", OLLAMA_MODEL="tiny")
+    prompts = []
+    monkeypatch.setattr(alert_summary, "llm_summary",
+                        lambda stats, url, model: prompts.append(stats) or "<think>x</think>- All good")
+    result = client.post("/alerts/summary", headers=headers, json={}).get_json()
+    assert result["source"] == "llm"
+    assert "secret details" not in json.dumps(prompts)
+
+    monkeypatch.setattr(alert_summary, "llm_summary", lambda *a: (_ for _ in ()).throw(OSError("down")))
+    assert client.post("/alerts/summary", headers=headers, json={}).get_json()["source"] == "stats"
+
+
+def test_routes_do_not_redirect_on_missing_trailing_slash(app, client, make_user):
+    """A redirect would point outside the /api prefix behind nginx and break the browser."""
+    _, tenant_id, headers = make_user("admin@example.com")
+    for url in ("/video-cameras", "/alerts", "/employees", "/alert-rules", "/zone"):
+        assert client.get(url, headers=headers).status_code == 200, url

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router";
-import Sidebar from "../../components/layout/Sidebar";
 import {
   getAlert,
   updateAlert,
@@ -174,8 +173,7 @@ const IndividualAlertPage = () => {
   };
 
   return (
-    <div className="flex h-screen bg-neutral-900 text-white">
-      <Sidebar />
+    <div className="flex h-full bg-neutral-900 text-white">
       <main className="flex-1 p-6 md:p-8 lg:p-10 overflow-y-auto">
         <div className="flex items-center mb-8">
           <button
