@@ -45,7 +45,7 @@ const EmployeesList = () => {
 
     const handleDeleteConfirm = async () => {
         if (!employeeToDelete) return;
-        
+
         try {
             await deleteEmployee(employeeToDelete.id);
             // Update the local state to remove the deleted employee
@@ -78,7 +78,7 @@ const EmployeesList = () => {
 
 
     const DeleteModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
             <div className="bg-neutral-800 rounded-lg p-6 max-w-md w-full mx-4">
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold">Confirm Deletion</h3>
@@ -87,18 +87,18 @@ const EmployeesList = () => {
                     </button>
                 </div>
                 <p className="mb-6">
-                    Are you sure you want to delete employee <span className="font-semibold">{employeeToDelete?.firstName} {employeeToDelete?.lastName}</span>? 
+                    Are you sure you want to delete employee <span className="font-semibold">{employeeToDelete?.firstName} {employeeToDelete?.lastName}</span>?
                     This action cannot be undone.
                 </p>
                 <div className="flex justify-end space-x-3">
-                    <button 
-                        onClick={handleDeleteCancel} 
+                    <button
+                        onClick={handleDeleteCancel}
                         className="cursor-pointer px-4 py-2 border border-neutral-600 rounded-md hover:bg-neutral-700"
                     >
                         Cancel
                     </button>
-                    <button 
-                        onClick={handleDeleteConfirm} 
+                    <button
+                        onClick={handleDeleteConfirm}
                         className="cursor-pointer px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                     >
                         Delete
@@ -126,10 +126,10 @@ const EmployeesList = () => {
 
                 {/* Single Stat Card - Changed from full width to max-w-xs */}
                 <div className="mb-8 max-w-xs">
-                    <StatCard 
-                        icon={<FiUsers className="h-6 w-6 text-white" />} 
-                        title="Total Employees" 
-                        value={employees.length} 
+                    <StatCard
+                        icon={<FiUsers className="h-6 w-6 text-white" />}
+                        title="Total Employees"
+                        value={employees.length}
                     />
                 </div>
 
@@ -170,7 +170,7 @@ const EmployeesList = () => {
                                             <td className="px-4 py-3">
                                                 <div className="w-10 h-10 rounded-full overflow-hidden bg-neutral-600">
                                                     {employee.id ? (
-                                                        <AuthenticatedImage 
+                                                        <AuthenticatedImage
                                                             employeeId={employee.id}
                                                             alt={`${employee.firstName} ${employee.lastName}`}
                                                         />
@@ -186,9 +186,9 @@ const EmployeesList = () => {
                                             <td className="px-4 py-3">{employee.department || 'N/A'}</td>
                                             <td className="px-4 py-3">{employee.role || 'N/A'}</td>
                                             <td className="px-4 py-3">
-                                                
+
                                                 <div className="flex space-x-2">
-                                                    <Link 
+                                                    <Link
                                                         to={`/employees/${employee.id}/edit`}
                                                         className="text-neutral-400 hover:text-white p-1"
                                                     >

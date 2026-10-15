@@ -34,7 +34,7 @@ const VideoCamerasRegisterPage = () => {
 
         try {
             // Validate form data
-            const { name, ip, port, username, password, location } = formData;
+            const { name, ip, port, username, password } = formData;
             
             if (!name || !ip || !port || !username || !password) {
                 throw new Error("Please fill all required fields.");
@@ -47,7 +47,7 @@ const VideoCamerasRegisterPage = () => {
             }
 
             // Submit data to API
-            const response = await createVideoCamera({
+            await createVideoCamera({
                 ...formData,
                 port: portNumber
             });

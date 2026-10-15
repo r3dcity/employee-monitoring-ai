@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
 import Sidebar from "../../components/layout/Sidebar";
 import { registerEmployee } from '../../services/MainService';
-import { useUser } from '../../context/UserContext';
 import { FiUser, FiUpload, FiSave } from 'react-icons/fi';
 
 const EmployeeRegistration = () => {
     const navigate = useNavigate();
-    const { token } = useUser();
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [formData, setFormData] = useState({

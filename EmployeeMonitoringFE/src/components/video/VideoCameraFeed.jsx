@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { FiRefreshCw, FiMapPin, FiServer, FiWifi } from "react-icons/fi";
-import { SERVER_URL } from "../../utils/constants";
 import { useUser } from "../../context/UserContext";
+import { buildStreamUrl } from "../../utils/streamUrl";
 
 /**
  * Component for displaying a video camera feed with status indicators
@@ -9,7 +9,7 @@ import { useUser } from "../../context/UserContext";
  * @param {Object} camera - Camera object with properties: id, name, location, status, ip, port
  * @param {boolean} detailed - Whether to show detailed information (true) or compact view (false)
  * @param {function} onClickHandler - Function to call when the camera is clicked
- * @param {number} streamKey - Key used to force refresh of the stream (optional)
+ * @param {number} streamKey - Changing it forces the stream to reconnect (optional)
  */
 const VideoCameraFeed = ({
   camera,
@@ -20,18 +20,27 @@ const VideoCameraFeed = ({
   const [isStreamLoading, setIsStreamLoading] = useState(true);
   const [streamError, setStreamError] = useState(false);
   const [streamUrl, setStreamUrl] = useState("");
+  const imgRef = useRef(null);
   const { token } = useUser();
 
-  // Generate stream URL when component mounts or when streamKey changes
+  // Generate stream URL when component mounts or when streamKey changes.
+  // The cache buster makes the browser open a new connection instead of reusing the old one.
   useEffect(() => {
     if (camera && camera.name && token) {
       setIsStreamLoading(true);
       setStreamError(false);
-      // Create a fresh URL with timestamp to prevent caching
-      const url = `${SERVER_URL}/video-cameras/${camera.name}/stream?token=${token}`;
-      setStreamUrl(url);
+      setStreamUrl(buildStreamUrl(camera.name, token, [], streamKey));
     }
   }, [camera, token, streamKey]);
+
+  // Browsers keep downloading an MJPEG stream from a removed <img> until it is garbage
+  // collected; clearing src closes the connection right away.
+  useEffect(() => {
+    const img = imgRef.current;
+    return () => {
+      if (img) img.src = "";
+    };
+  }, []);
 
   const handleStreamLoad = () => {
     setIsStreamLoading(false);
@@ -47,15 +56,14 @@ const VideoCameraFeed = ({
     e.stopPropagation(); // Prevent triggering the parent's onClick
     setIsStreamLoading(true);
     setStreamError(false);
-    const newUrl = `${SERVER_URL}/video-cameras/${camera.name}/stream?token=${token}`;
-    setStreamUrl(newUrl);
+    setStreamUrl(buildStreamUrl(camera.name, token, [], Date.now()));
   };
 
   return (
     <div
       className={`
-        relative overflow-hidden rounded-lg shadow-lg 
-        ${detailed ? "bg-neutral-800" : "bg-neutral-900"} 
+        relative overflow-hidden rounded-lg shadow-lg
+        ${detailed ? "bg-neutral-800" : "bg-neutral-900"}
         transition-all duration-300
         flex flex-col
       `}
@@ -84,6 +92,7 @@ const VideoCameraFeed = ({
         {/* Image Stream */}
         {streamUrl && (
           <img
+            ref={imgRef}
             id={`stream-${camera.id}`}
             src={streamUrl}
             alt={`Stream from ${camera.name}`}
@@ -138,9 +147,9 @@ const VideoCameraFeed = ({
                 ></span>
                 {!isStreamLoading ? "LIVE" : "OFFLINE"}
               </div>
-            
+
             </div>
-          
+
 
             {/* Camera connection details - single line */}
             <div className="flex items-center justify-between text-xs text-neutral-400 border-t border-neutral-700 pt-2 mt-2">

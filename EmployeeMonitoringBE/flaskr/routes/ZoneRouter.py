@@ -8,6 +8,7 @@ from flaskr.entities.Alert import Alert
 from flaskr.entities.alert_system.RuleZoneLink import RuleZoneLink
 from flaskr.routes.VideoCameraRouter import active_cameras, camera_locks, stream_key
 from flaskr.services.storage import tenant_dir, relative_to_base
+import json
 import cv2 as cv
 import numpy as np
 
@@ -39,6 +40,22 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in app.config["ALLOWED_EXTENSIONS"]
 
+
+
+@bp.route("/", methods=["GET"])
+@permission_required("READ_VIDEO_CAMERA")
+def get_zones(current_user):
+    """List zones, optionally only those of one camera (?camera_id=1)."""
+    try:
+        db = get_tenant_db()
+        query = db.query(Zone)
+        camera_id = request.args.get("camera_id", type=int)
+        if camera_id is not None:
+            query = query.filter(Zone.video_camera_id == camera_id)
+        return {"zones": [zone.to_dict() for zone in query.order_by(Zone.id).all()]}, 200
+    except Exception as e:
+        app.logger.error(e)
+        return {"message": "Something went wrong"}, 500
 
 
 @bp.route("/", methods=["POST"])
@@ -80,7 +97,14 @@ def create_zone(current_user):
 
         if frame_snapshot is None:
             return {"message": "Failed to decode camera frame"}, 400
-        polygon = np.array([[p["x"], p["y"]] for p in points], dtype=np.int32)
+
+        # Points are normalized (0..1) by the client so they do not depend on the size the
+        # stream was displayed at; scale them to this frame's resolution for the mask.
+        normalized = [{"x": float(p["x"]), "y": float(p["y"])} for p in points]
+        if any(not (0 <= p["x"] <= 1 and 0 <= p["y"] <= 1) for p in normalized):
+            return {"message": "Points must be normalized between 0 and 1"}, 400
+        height, width = frame_snapshot.shape[:2]
+        polygon = np.array([[round(p["x"] * (width - 1)), round(p["y"] * (height - 1))] for p in normalized], dtype=np.int32)
         polygon = polygon.reshape((-1, 1, 2))
         mask = np.zeros_like(frame_snapshot)
         cv.fillPoly(mask, [polygon], (255, 255, 255))
@@ -96,15 +120,12 @@ def create_zone(current_user):
         zone = Zone(
             name=zone_name,
             mask=relative_to_base(filepath, "MASK_ZONES_PATH"),
+            points=json.dumps(normalized),
             video_camera_id=camera_id
         )
         db.add(zone)
         db.commit()
-        return {"message": "Zone created sucessfuly.", "zone": {
-            "id": zone.id,
-            "name": zone.name,
-            "video_camera_id": zone.video_camera_id
-        }}, 201
+        return {"message": "Zone created sucessfuly.", "zone": zone.to_dict()}, 201
     except (KeyError, TypeError, ValueError):
         return {"message": "Points must be a list of {x, y} coordinates"}, 400
     except Exception as e:

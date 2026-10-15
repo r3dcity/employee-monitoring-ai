@@ -12,7 +12,11 @@ export const UserProvider = ({ children }) => {
     const storedToken = localStorage.getItem("token");
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem("user");
+      }
     }
     if (storedToken) {
       setToken(storedToken);
@@ -33,7 +37,7 @@ export const UserProvider = ({ children }) => {
     }
     return false
   }
-  
+
   const isAdmin = () => {
     if (user && user.roles) {
       return user.roles.some(role => role === "ADMIN");

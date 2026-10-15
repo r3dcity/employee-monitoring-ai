@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router';
 import Sidebar from "../../components/layout/Sidebar";
 import { useUser } from '../../context/UserContext';
@@ -14,9 +14,7 @@ const VideoCamerasPage = () => {
     const [streamKey, setStreamKey] = useState(Date.now());
     const { token } = useUser();
     const navigate = useNavigate();
-    console.log(token);
-    const refreshTimerRef = useRef(null);
-    
+
     const fetchCameras = async () => {
         setRefreshing(true);
         try {
@@ -32,28 +30,17 @@ const VideoCamerasPage = () => {
             setLoading(false);
         }
     };
-    
+
     useEffect(() => {
         if (token) {
-            // Fetch cameras when component mounts
             fetchCameras();
-            
-            // Set up stream refresh interval (every 2 minutes)
-            refreshTimerRef.current = setInterval(() => {
-                setStreamKey(Date.now()); // Force stream to reload
-            }, 120000);
-            
-            // Clean up interval on component unmount
-            return () => {
-                if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
-            };
         }
     }, [token]);
 
     const handleCameraClick = (camera) => {
         navigate(`/video-cameras/${camera.id}`);
     };
-    
+
     const handleRefresh = () => {
         setRefreshing(true);
         fetchCameras();
@@ -105,9 +92,9 @@ const VideoCamerasPage = () => {
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {cameras.map((camera) => (
-                            <VideoCameraFeed 
-                                key={camera.id} 
-                                camera={camera} 
+                            <VideoCameraFeed
+                                key={camera.id}
+                                camera={camera}
                                 detailed={true}
                                 onClickHandler={handleCameraClick}
                                 streamKey={streamKey}

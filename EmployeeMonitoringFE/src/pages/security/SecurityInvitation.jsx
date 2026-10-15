@@ -1,38 +1,27 @@
 import Sidebar from "../../components/layout/Sidebar";
 import { useState } from "react";
 import { FiCopy, FiCheck } from "react-icons/fi";
-import { postSecurityInvitation } from "../../services/MainService";
-
-function generateUUID() {
-    // Simple UUID v4 generator
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
+import { postSecurityInvitation, getErrorMessage } from "../../services/MainService";
 
 const SecurityInvitation = () => {
     const [uuid, setUuid] = useState("");
     const [copied, setCopied] = useState(false);
     const [error, setError] = useState("");
 
-    const handleGenerate = async  () => {
-        const newUuid = generateUUID();
-        setUuid(newUuid);
+    const handleGenerate = async () => {
         setCopied(false);
         setError("");
-        const res = await postSecurityInvitation(newUuid);
-        if(res.status === 201) {
-            console.log("Invitation code generated successfully:", res.data);
-        }
-        else {
-            setError("Failed to generate invitation code. Please try again.");
-            console.error("Error generating invitation code:", res.data);
+        try {
+            const res = await postSecurityInvitation();
+            setUuid(res.data.code);
+        } catch (err) {
+            setUuid("");
+            setError(getErrorMessage(err, "Failed to generate invitation code. Please try again."));
         }
     };
 
     const invitationLink = uuid
-        ? `http://localhost:5173/security/register?code=${uuid}`
+        ? `${window.location.origin}/security/register?code=${encodeURIComponent(uuid)}`
         : "";
 
     const handleCopy = () => {
@@ -52,7 +41,7 @@ const SecurityInvitation = () => {
                         <p className="text-sm text-neutral-400 mt-2">
                             Click the button below to generate a unique invitation code.
                             <br />
-                            After that, share the link with the security guard. 
+                            After that, share the link with the security guard.
                             Then he will be able to register in the system.
                         </p>
                     </div>
@@ -85,7 +74,7 @@ const SecurityInvitation = () => {
                                     )}
                                 </span>
                             )}
-                            
+
                         </div>
                     </div>
                     {error && (
